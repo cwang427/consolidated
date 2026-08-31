@@ -533,17 +533,36 @@ function addLoc(l){
   drawLocPicker();
 }
 const shortName=s=>s.split(',').slice(0,2).join(',');
+// Photon (keyless, OSM data) handles place-name search far better than Nominatim:
+// typo-tolerant, partial matches, and biased toward home so nearby spots rank first.
+// Nominatim stays as the fallback — it's better at raw street addresses, and a
+// backstop if Photon is down. (Google Places would need a billed API key.)
+async function searchPlaces(q){
+  const b=(S.settings&&S.settings.homes||[]).find(h=>h&&h.lat!=null);
+  try{
+    const r=await fetch(`https://photon.komoot.io/api/?limit=6&lang=en${b?`&lat=${b.lat}&lon=${b.lng}`:''}&q=${encodeURIComponent(q)}`);
+    const js=await r.json();
+    const out=(js.features||[]).map(f=>{
+      const p=f.properties||{},[lng,lat]=f.geometry.coordinates;
+      const addr=fmtAddr({house_number:p.housenumber,road:p.street,city:p.city||p.district,state:p.state,postcode:p.postcode},'');
+      return {name:p.name||addr||'Unnamed place',lat:+lat.toFixed(6),lng:+lng.toFixed(6),addr};
+    });
+    if(out.length)return out;
+  }catch(e){}
+  const r=await fetch(`https://nominatim.openstreetmap.org/search?format=json&limit=5&addressdetails=1&q=${encodeURIComponent(q)}`);
+  const js=await r.json();
+  return js.map(p=>({name:shortName(p.display_name),lat:+p.lat,lng:+p.lon,addr:fmtAddr(p.address,p.display_name)}));
+}
 async function locSearch(){
   const q=$('loc-q').value.trim();if(!q)return;
   $('loc-results').innerHTML='<div class="hint">Searching…</div>';
   try{
-    const r=await fetch(`https://nominatim.openstreetmap.org/search?format=json&limit=5&addressdetails=1&q=${encodeURIComponent(q)}`);
-    const js=await r.json();
-    $('loc-results').innerHTML=js.length?js.map(p=>{
-      const l={name:shortName(p.display_name),lat:+p.lat,lng:+p.lon};
-      if(F&&F.showAddr)l.addr=fmtAddr(p.address,p.display_name);
+    const results=await searchPlaces(q);
+    $('loc-results').innerHTML=results.length?results.map(p=>{
+      const l={name:p.name,lat:p.lat,lng:p.lng};
+      if(F&&F.showAddr)l.addr=p.addr||null;
       const payload=JSON.stringify(l).replace(/'/g,'&#39;').replace(/"/g,'&quot;');
-      return `<button onclick='addLoc(JSON.parse(this.dataset.l))' data-l="${payload}">📍 ${esc(p.display_name)}</button>`;
+      return `<button onclick='addLoc(JSON.parse(this.dataset.l))' data-l="${payload}">📍 ${esc(p.name)}${p.addr&&p.addr!==p.name?`<span style="color:var(--muted)"> · ${esc(p.addr)}</span>`:''}</button>`;
     }).join(''):'<div class="hint">No results — try adding the city or neighborhood.</div>';
   }catch(e){$('loc-results').innerHTML='<div class="hint">Search failed — check your connection.</div>'}
 }
