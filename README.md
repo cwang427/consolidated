@@ -23,12 +23,12 @@ service cloud.firestore {
 }
 ```
 
-These two logins (and the names Mr. Soccerboy / Ms. Chairgirl) are baked into the app. The rules reject everyone except them — so the repo being public exposes nothing.
+Substitute your two sign-in emails for the placeholders — the real addresses live only here in the Firebase console, never in this repo. The app itself stores only SHA-256 hashes of them (the `PARTNERS` constant in `index.html`) and matches the signed-in email by hash, so the repo being public exposes neither your data nor your logins. If you ever change the emails, update the hashes to match (`echo -n 'new@email' | shasum -a 256`).
 
 ### 1½. Create your two logins
 1. Firebase console → **Build → Authentication → Get started**.
 2. **Sign-in method** tab → enable **Email/Password** (just the first toggle; skip "email link").
-3. **Users** tab → **Add user**, twice — exactly `partner-a@example.com` and `partner-b@example.com` (they don't need to be real or verified addresses); just make the passwords strong.
+3. **Users** tab → **Add user**, twice — exactly the two emails you put in the rules (they don't need to be real or verified addresses); just make the passwords strong.
 4. Optional belt-and-braces: **Authentication → Settings → User actions** → disable sign-up ("Enable create"), so nobody can register new accounts. The email allowlist in the rules already protects your data either way.
 
 Each of you signs in with your own login, and the app maps the login to your identity — notes and reflections can't be saved under the wrong name. On iPhone, Safari/iCloud Keychain offers to save the password on first sign-in and autofills it with Face ID after that, so no password manager is needed.

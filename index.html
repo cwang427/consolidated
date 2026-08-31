@@ -213,7 +213,8 @@ const firebaseConfig = {
 
 // ══════════ state & helpers ══════════
 const CATS=['Food & drink','Outdoors','Arts & culture','At home','Adventure','Day trip','Other'];
-const PARTNERS={A:{name:'Mr. Soccerboy',email:'partner-a@example.com'},B:{name:'Ms. Chairgirl',email:'partner-b@example.com'}};
+// identity = SHA-256 of the signed-in email; the real addresses live only in the Firebase console
+const PARTNERS={A:{name:'Mr. Soccerboy',emailHash:'9ed83fa4276eb047b246d4ad094cf8daf2bef8187f2c97e98a67c8294c30f929'},B:{name:'Ms. Chairgirl',emailHash:'e8f60b7542c1a41a288c21f2d65ac96ef6c299fa71f1fa8bbce7859cc2e93cd9'}};
 let db=null;
 const S={ready:false,cfgOk:false,authKnown:false,user:null,settings:null,ideas:[],dates:[],photos:[],
   me:localStorage.getItem('dj_me')||null,
@@ -230,12 +231,24 @@ function fmtTime(t){const[h,mi]=t.split(':').map(Number);return `${((h+11)%12)+1
 function todayStr(){const d=new Date();return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`}
 
 // ══════════ boot ══════════
+async function sha256(s){
+  const b=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(s));
+  return [...new Uint8Array(b)].map(x=>x.toString(16).padStart(2,'0')).join('');
+}
+// identity follows the login when the email hash matches a partner
+async function applyIdentity(u){
+  S.meLocked=false;
+  if(!u||!u.email||!crypto.subtle)return;
+  const h=await sha256(u.email.toLowerCase());
+  if(h===PARTNERS.A.emailHash){S.me='A';S.meLocked=true}
+  else if(h===PARTNERS.B.emailHash){S.me='B';S.meLocked=true}
+}
 function boot(){
   S.cfgOk=!/PASTE_YOUR/.test(firebaseConfig.apiKey||'');
   if(!S.cfgOk){render();return}
   firebase.initializeApp(firebaseConfig);
   db=firebase.firestore();
-  firebase.auth().onAuthStateChanged(u=>{S.authKnown=true;S.user=u;if(u)subscribe();render()});
+  firebase.auth().onAuthStateChanged(async u=>{S.authKnown=true;S.user=u;if(u){await applyIdentity(u);subscribe()}render()});
 }
 let subbed=false;
 function subscribe(){
@@ -251,10 +264,6 @@ function subscribe(){
 let lastScreen=null;
 function render(){
   const app=$('app'),tb=$('tabbar'),fab=$('fab');
-  // identity follows the login when partner emails are set
-  S.meLocked=false;
-  if(S.user){const em=(S.user.email||'').toLowerCase();
-   if(em===PARTNERS.A.email){S.me='A';S.meLocked=true}else if(em===PARTNERS.B.email){S.me='B';S.meLocked=true}}
   const screen=!S.cfgOk?'cfg':!S.authKnown?'wait':!S.user?'login':!S.ready?'load':!S.settings?'setup':!S.me?'who':'main';
   const fo=document.activeElement;
   // don't clobber typing during same-screen refreshes — but never block a screen change

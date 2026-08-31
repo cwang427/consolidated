@@ -9,10 +9,8 @@ A private two-person date-journal web app: shared date-idea list, journal of log
 - **Backend:** Firebase Firestore only, **Spark (free) plan — a hard project constraint**. No Cloud Storage (requires Blaze/credit card), no phone auth (same reason), no paid anything.
 - **Photos** live *in Firestore* as base64 JPEG data URLs: client-side compression to ≤1600px / <~930K chars (Firestore 1MiB doc limit). Collections: `photos` (thumbnail + meta) and `photoFulls` (full image), split so list views only load thumbs.
 - **Maps:** Leaflet + OpenStreetMap tiles, Nominatim search — all keyless/free. Never introduce Google Maps (billing).
-- **Auth:** Firebase email/password. Two fixed accounts, baked into the `PARTNERS` constant in `index.html`:
-  `partner-a@example.com` → "Mr. Soccerboy" (partner A, rose), `partner-b@example.com` → "Ms. Chairgirl" (partner B, teal).
-  Identity is derived from the signed-in email — there is intentionally no in-app name/identity editing.
-- **Firestore rules** allowlist exactly those two emails (see README). Firebase config in `index.html` is public-safe by design; the rules are the security boundary.
+- **Auth:** Firebase email/password. Two fixed accounts: "Mr. Soccerboy" (partner A, rose) and "Ms. Chairgirl" (partner B, teal). The `PARTNERS` constant in `index.html` holds **SHA-256 hashes** of the two sign-in emails, never the plaintext — identity is derived by hashing the signed-in email (`applyIdentity()`) — and there is intentionally no in-app name/identity editing. **PII policy: the real emails, real names, and personal addresses must never appear in this repo (it's public); they live only in the Firebase console.** If the emails ever change, recompute the hashes.
+- **Firestore rules** allowlist exactly the two real emails (see README for the shape, with placeholders). Firebase config in `index.html` is public-safe by design; the rules are the security boundary.
 
 ## Data model (Firestore)
 
