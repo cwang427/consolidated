@@ -337,7 +337,7 @@ function extMapLinks(locs){
     a=`https://maps.apple.com/?saddr=${ll(locs[0])}&daddr=${locs.slice(1).map(ll).join('+to:')}`;
     g=`https://www.google.com/maps/dir/?api=1&origin=${ll(locs[0])}&destination=${ll(locs[locs.length-1])}${locs.length>2?`&waypoints=${locs.slice(1,-1).map(ll).join('|')}`:''}`;
   }
-  return `<div class="maplinks"><a href="${a}" target="_blank" rel="noopener"> Apple Maps</a><a href="${g}" target="_blank" rel="noopener">🗺️ Google Maps</a></div>`;
+  return `<div class="maplinks"><a href="${a}" target="_blank" rel="noopener">🍎 Apple Maps</a><a href="${g}" target="_blank" rel="noopener">🗺️ Google Maps</a></div>`;
 }
 
 // ══════════ notes (shared by ideas & memories) ══════════
