@@ -659,18 +659,25 @@ function calendarView(){
       ${ph?`<img src="${ph.thumb}">`:''}<span class="dnum">${dd}</span></div>`;
   }
   const mn=S.cal.toLocaleDateString(undefined,{month:'long',year:'numeric'});
-  const ms=memoryMonths(),cur=calKey(),lo=ms[0],hi=ms[ms.length-1];
-  return `<div class="cal-head"><button onclick="calNav(-1)" ${cur>lo?'':'disabled style="opacity:.25"'}>‹</button><h3>${mn}</h3><button onclick="calNav(1)" ${cur<hi?'':'disabled style="opacity:.25"'}>›</button></div>
+  const b=calBounds(),cur=calKey();
+  return `<div class="cal-head"><button onclick="calNav(-1)" ${b&&cur>b.lo?'':'disabled style="opacity:.25"'}>‹</button><h3>${mn}</h3><button onclick="calNav(1)" ${b&&cur<b.hi?'':'disabled style="opacity:.25"'}>›</button></div>
   <div class="cal-grid">${['S','M','T','W','T','F','S'].map(x=>`<div class="cal-dow">${x}</div>`).join('')}${cells}</div>`;
 }
-// the calendar steps month by month (unlike the album, empty months in between are worth
-// seeing) but stays inside the span of months you actually have memories in
+// the calendar spans your oldest memory through the later of your newest memory and the
+// current month — so today is always reachable even after a quiet stretch
+function calBounds(){
+  const ms=memoryMonths();if(!ms.length)return null;
+  const now=todayStr().slice(0,7),last=ms[ms.length-1];
+  return {lo:ms[0],hi:last>now?last:now};
+}
+// it steps month by month (unlike the album, empty months in between are worth seeing)
+// but stays inside those bounds
 function calNav(n){
-  const ms=memoryMonths();if(!ms.length)return;
+  const b=calBounds();if(!b)return;
   const d=new Date(S.cal.getFullYear(),S.cal.getMonth()+n,1);
   let k=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
-  if(k<ms[0])k=ms[0];
-  if(k>ms[ms.length-1])k=ms[ms.length-1];
+  if(k<b.lo)k=b.lo;
+  if(k>b.hi)k=b.hi;
   goMonth(k);
 }
 function calTap(ds){
