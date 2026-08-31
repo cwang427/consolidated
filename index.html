@@ -96,6 +96,9 @@ label{display:block;font-size:13px;font-weight:700;color:var(--plum);margin:14px
 .dotA,.dotB{width:9px;height:9px;border-radius:50%;display:inline-block}
 .dotA{background:var(--rose)} .dotB{background:var(--teal)}
 .note-box textarea{border:none;background:#fdf9f4;min-height:70px}
+/* textareas in sheets auto-grow to fit their text (autoGrow), so they never scroll
+   internally and never need a drag handle */
+.sheet textarea{resize:none;overflow:hidden}
 .note-box .ro{white-space:pre-wrap;color:var(--ink);font-size:15px;min-height:22px}
 .note-box .ro.dim{color:var(--muted);font-style:italic}
 
@@ -315,9 +318,19 @@ function openOverlay(inner){
   const el=document.createElement('div');el.className='overlay';
   el.innerHTML=`<div class="sheet">${inner}</div>`;
   el.addEventListener('click',e=>{if(e.target===el)closeTop()});
-  document.body.appendChild(el);overlayStack.push(el);return el;
+  document.body.appendChild(el);overlayStack.push(el);
+  growAll(el);setTimeout(()=>growAll(el),50); // again once webfonts settle
+  return el;
 }
 function closeTop(){const el=overlayStack.pop();if(el)el.remove()}
+// grow a textarea to fit its content: a nested scrollbar in a 70px box makes both
+// reading a long reflection and keeping track of what you've typed needlessly hard
+function autoGrow(el){
+  if(!el)return;
+  el.style.height='auto';
+  el.style.height=(el.scrollHeight+el.offsetHeight-el.clientHeight)+'px';
+}
+function growAll(root){(root||document).querySelectorAll('.sheet textarea').forEach(autoGrow)}
 function closeAll(){while(overlayStack.length)closeTop()}
 
 // ══════════ maps ══════════
@@ -366,7 +379,7 @@ function noteBoxes(kind,id,notes){
   return ['A','B'].map(k=>{
     const mine=k===S.me,v=(notes&&notes[k])||'';
     return `<div class="note-box"><div class="who"><span class="dot${k}"></span>${esc(pname(k))}${mine?' (you)':''}</div>
-    ${mine?`<textarea id="nb-${kind}-${k}" placeholder="${kind==='idea'?'Details, links, cravings, dreams…':'What do you remember? How did it feel?'}" onblur="saveNote('${kind}','${id}','${k}')">${esc(v)}</textarea>`
+    ${mine?`<textarea id="nb-${kind}-${k}" placeholder="${kind==='idea'?'Details, links, cravings, dreams…':'What do you remember? How did it feel?'}" oninput="autoGrow(this)" onblur="saveNote('${kind}','${id}','${k}')">${esc(v)}</textarea>`
           :`<div class="ro ${v?'':'dim'}">${v?esc(v):'Nothing written yet'}</div>`}</div>`;
   }).join('');
 }
@@ -478,7 +491,7 @@ function openIdeaForm(id){
    <div class="sheet-body">
      <label>Title</label><input id="f-title" value="${esc(i?i.title:'')}" placeholder="Picnic at the botanical garden">
      <label>Category</label><select id="f-cat">${CATS.map(c=>`<option ${i&&i.category===c?'selected':''}>${c}</option>`).join('')}</select>
-     <label>Details</label><textarea id="f-desc" placeholder="Anything worth remembering…">${esc(i?i.desc:'')}</textarea>
+     <label>Details</label><textarea id="f-desc" placeholder="Anything worth remembering…" oninput="autoGrow(this)">${esc(i?i.desc:'')}</textarea>
      <label>Location</label>${locPickerHTML()}
    </div>`);
   drawLocPicker();
