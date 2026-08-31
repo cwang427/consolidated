@@ -477,7 +477,8 @@ function locPickerHTML(){return `<div id="locwrap" class="loc-list"></div>
  <div id="pickmap" class="map" style="height:180px;margin-top:8px"></div>`}
 function drawLocPicker(){
   const wrap=$('locwrap');if(!wrap)return;
-  wrap.innerHTML=F.locs.map((l,ix)=>`<div class="loc-row">${F.max>1?`<span class="n">${ix+1}</span>`:'📍'}<span class="grow">${esc(l.name)}</span><button class="x" onclick="rmLoc(${ix})">✕</button></div>`).join('');
+  // the home picker's Location row shows the street address (the label holds the nickname)
+  wrap.innerHTML=F.locs.map((l,ix)=>`<div class="loc-row">${F.max>1?`<span class="n">${ix+1}</span>`:'📍'}<span class="grow">${esc(F.showAddr&&l.addr?l.addr:l.name)}</span><button class="x" onclick="rmLoc(${ix})">✕</button></div>`).join('');
   setTimeout(()=>{
     const el=$('pickmap');if(!el)return;
     if(pickMap){try{pickMap.remove()}catch(e){}pickMap=null}
@@ -502,11 +503,11 @@ function fmtAddr(a,fallback){
 async function updateLocAddr(){
   const el=$('loc-addr');if(!el)return;
   const l=F.locs[0];
-  if(!l){el.hidden=true;return}
+  // a spot with a captured exact address shows it in the Location row itself; the hint
+  // line is only for pins with no known address, via reverse lookup — which snaps to the
+  // nearest OSM address point and can be a neighbor's, hence "(approximate)"
+  if(!l||l.addr){el.hidden=true;return}
   el.hidden=false;
-  // exact address captured when this spot was picked from search — trust it over a
-  // reverse lookup, which snaps to the nearest OSM address point and can be a neighbor's
-  if(l.addr){el.textContent='📮 '+l.addr;return}
   const key=l.lat+','+l.lng;
   if(!(key in addrCache)){
     el.textContent='Looking up address…';
@@ -754,7 +755,7 @@ function settingsView(){
    <div class="card"><div class="section-title" style="margin-top:0">Home base 🏠</div>
      <p class="hint" style="margin-top:0">Set your home location to display on maps.</p>
      ${['A','B'].map((k,ix)=>{const h=homes[ix],mine=ix===myIx;return `<label>${esc(pname(k))}'s place${mine?' (you)':''}</label>
-       <div class="loc-row">${h&&h.lat!=null?`<span class="grow">📍 ${esc(h.label)}</span>`:`<span class="grow" style="color:var(--muted)">Not set yet</span>`}${mine?`<button class="x" style="color:var(--rose-dark);font-size:14px;font-weight:700" onclick="pickHome(${ix})">${h&&h.lat!=null?'Change':'Set'}</button>`:''}</div>`}).join('')}
+       <div class="loc-row">${h&&h.lat!=null?`<span class="grow">📍 ${esc(h.addr||h.label)}</span>`:`<span class="grow" style="color:var(--muted)">Not set yet</span>`}${mine?`<button class="x" style="color:var(--rose-dark);font-size:14px;font-weight:700" onclick="pickHome(${ix})">${h&&h.lat!=null?'Change':'Set'}</button>`:''}</div>`}).join('')}
    </div>
    <div class="card"><div class="section-title" style="margin-top:0">Account</div>
      <p class="hint" style="margin-top:0">Signed in as ${esc(S.user.email||'')}.</p>
