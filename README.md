@@ -17,18 +17,18 @@ service cloud.firestore {
   match /databases/{database}/documents {
     match /{document=**} {
       allow read, write: if request.auth != null
-        && request.auth.token.email in ['YOUR-EMAIL-HERE', 'HER-EMAIL-HERE'];
+        && request.auth.token.email in ['partner-a@example.com', 'partner-b@example.com'];
     }
   }
 }
 ```
 
-Replace the two placeholders with the exact sign-in emails you create in the next step (lowercase). These rules reject everyone except your two logins — so the repo being public exposes nothing.
+These two logins (and the names Mr. Soccerboy / Ms. Chairgirl) are baked into the app. The rules reject everyone except them — so the repo being public exposes nothing.
 
 ### 1½. Create your two logins
 1. Firebase console → **Build → Authentication → Get started**.
 2. **Sign-in method** tab → enable **Email/Password** (just the first toggle; skip "email link").
-3. **Users** tab → **Add user**, twice — one login for each of you. The emails don't need to be real or verified (`him@ourdates.love` / `her@ourdates.love` work fine); just make the passwords strong.
+3. **Users** tab → **Add user**, twice — exactly `partner-a@example.com` and `partner-b@example.com` (they don't need to be real or verified addresses); just make the passwords strong.
 4. Optional belt-and-braces: **Authentication → Settings → User actions** → disable sign-up ("Enable create"), so nobody can register new accounts. The email allowlist in the rules already protects your data either way.
 
 Each of you signs in with your own login, and the app maps the login to your identity — notes and reflections can't be saved under the wrong name. On iPhone, Safari/iCloud Keychain offers to save the password on first sign-in and autofills it with Face ID after that, so no password manager is needed.
@@ -45,7 +45,7 @@ Each of you signs in with your own login, and the app maps the login to your ide
 4. On each of your iPhones, open that URL in Safari → Share → **Add to Home Screen**. It'll feel like a real app.
 
 ### 4. First run
-The app walks you through it: sign in with your own login (once per device — it stays signed in) → enter both names and both sign-in emails (this ties each login to an identity, so there's no "who am I" picking) → set both apartments in **Settings → Home base** so every map shows them.
+The app walks you through it: sign in with your own login (once per device — it stays signed in; the app knows who you are from which login you use) → set both apartments in **Settings → Home base** so every map shows them.
 
 ## How it works / good to know
 - **Ideas** each have a category, an optional location, and a private-ish notes box per partner (you write in yours; you can read each other's).
