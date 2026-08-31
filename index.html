@@ -578,10 +578,6 @@ async function locSearch(){
   }catch(e){$('loc-results').innerHTML='<div class="hint">Search failed — check your connection.</div>'}
 }
 // ══════════ journal ══════════
-function refIcons(d){
-  const r=d.refl||{},who=['A','B'].filter(k=>(r[k]||'').trim());
-  return who.length?` · ✍️ ${who.length===2?'both':esc(pname(who[0]))}`:'';
-}
 function journalView(){
   const live=liveDates(),trash=S.dates.filter(d=>d.trash);
   const seg=`<div class="seg"><button class="${S.journalMode==='album'?'on':''}" onclick="S.journalMode='album';render()">📸 Album</button><button class="${S.journalMode==='cal'?'on':''}" onclick="S.journalMode='cal';render()">🗓️ Calendar</button></div>`;
@@ -594,7 +590,7 @@ function journalView(){
       <div class="mem-title">${esc(d.title)}</div>
       ${(d.locs||[]).length?`<div class="idea-meta">📍 ${(d.locs||[]).map(l=>esc(l.name)).join(' → ')}</div>`:''}
       ${ph.length?`<div class="thumbstrip">${ph.slice(0,8).map(p=>`<img src="${p.thumb}">`).join('')}</div>`:''}
-      <div class="mem-icons">${ph.length?`📷 ${ph.length}`:''}${refIcons(d)}</div></div>`;
+      ${ph.length?`<div class="mem-icons">📷 ${ph.length}</div>`:''}</div>`;
   }).join('');
   else body=calendarView();
   const trashSec=(S.journalMode==='album'&&trash.length)?`<div class="section-title">🗑️ Trash</div>`+trash.map(d=>{
