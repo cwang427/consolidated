@@ -1,0 +1,752 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<title>Our Dates</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>💌</text></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,700&family=Nunito+Sans:wght@400;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<style>
+:root{
+  --bg:#faf5ef; --card:#fffdf9; --ink:#3d2c33; --muted:#9a8790;
+  --rose:#c9536f; --rose-dark:#a83a55; --rose-soft:#f7dfe5;
+  --teal:#3e8e8c; --teal-soft:#dff0ee;
+  --plum:#5b3a4a; --line:#eadfd6; --gold:#c9a227;
+  --shadow:0 2px 10px rgba(91,58,74,.08);
+  --safe-b:env(safe-area-inset-bottom,0px);
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;padding:0}
+body{background:var(--bg);color:var(--ink);font:16px/1.5 "Nunito Sans",-apple-system,system-ui,sans-serif;overscroll-behavior-y:none}
+h1,h2,h3,.serif{font-family:"Fraunces",Georgia,serif;font-weight:700;letter-spacing:-.01em}
+button{font:inherit;cursor:pointer;border:none;background:none;color:inherit;padding:0}
+input,textarea,select{font:inherit;color:var(--ink);background:#fff;border:1.5px solid var(--line);border-radius:12px;padding:10px 12px;width:100%;outline:none}
+input:focus,textarea:focus,select:focus{border-color:var(--rose)}
+textarea{resize:vertical;min-height:84px}
+label{display:block;font-size:13px;font-weight:700;color:var(--plum);margin:14px 0 5px}
+
+#app{max-width:560px;margin:0 auto;padding:18px 16px calc(96px + var(--safe-b))}
+.screen-title{font-size:28px;margin:6px 0 2px}
+.screen-sub{color:var(--muted);font-size:14px;margin:0 0 14px}
+
+/* ---- cards ---- */
+.card{background:var(--card);border:1px solid var(--line);border-radius:16px;box-shadow:var(--shadow);padding:14px;margin-bottom:12px}
+.idea-card{display:flex;gap:10px;align-items:flex-start;cursor:pointer}
+.idea-card .grow{flex:1;min-width:0}
+.idea-title{font-family:"Fraunces",Georgia,serif;font-weight:700;font-size:17px;margin:0}
+.idea-meta{font-size:13px;color:var(--muted);margin-top:2px;display:flex;flex-wrap:wrap;gap:4px 10px}
+.chip{display:inline-block;font-size:11.5px;font-weight:700;padding:2px 9px;border-radius:99px;background:var(--rose-soft);color:var(--rose-dark)}
+.chip.teal{background:var(--teal-soft);color:var(--teal)}
+.chip.plain{background:#f1e9df;color:var(--plum)}
+.done-badge{font-size:12px;font-weight:700;color:var(--teal);white-space:nowrap}
+.filters{display:flex;gap:8px;margin:0 0 14px;overflow-x:auto;padding-bottom:2px}
+.filters button{padding:7px 14px;border-radius:99px;background:#f1e9df;color:var(--plum);font-size:13.5px;font-weight:700;white-space:nowrap}
+.filters button.on{background:var(--plum);color:#fff}
+
+/* ---- empty state ---- */
+.empty{text-align:center;color:var(--muted);padding:44px 20px}
+.empty .big{font-size:44px;margin-bottom:10px}
+
+/* ---- tab bar ---- */
+#tabbar{position:fixed;left:0;right:0;bottom:0;background:rgba(255,253,249,.95);backdrop-filter:blur(10px);border-top:1px solid var(--line);display:flex;justify-content:space-around;padding:8px 4px calc(8px + var(--safe-b));z-index:400}
+#tabbar button{display:flex;flex-direction:column;align-items:center;gap:1px;font-size:10.5px;font-weight:700;color:var(--muted);width:70px}
+#tabbar button.on{color:var(--rose-dark)}
+#tabbar .ico{font-size:21px;line-height:1.2}
+
+/* ---- FAB ---- */
+#fab{position:fixed;right:18px;bottom:calc(84px + var(--safe-b));width:56px;height:56px;border-radius:50%;background:var(--rose);color:#fff;font-size:30px;line-height:1;box-shadow:0 6px 18px rgba(201,83,111,.45);z-index:401;display:flex;align-items:center;justify-content:center}
+#fab:active{transform:scale(.94)}
+
+/* ---- overlays / sheets ---- */
+.overlay{position:fixed;inset:0;background:rgba(61,44,51,.35);z-index:500;display:flex;align-items:flex-end;animation:fade .18s}
+.sheet{background:var(--bg);width:100%;max-width:560px;margin:0 auto;border-radius:20px 20px 0 0;max-height:94dvh;display:flex;flex-direction:column;animation:up .22s ease-out}
+.sheet-head{display:flex;align-items:center;gap:10px;padding:14px 16px 10px;border-bottom:1px solid var(--line)}
+.sheet-head h2{flex:1;font-size:19px;margin:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sheet-head .hbtn{font-size:14px;font-weight:700;color:var(--rose-dark);padding:6px 10px;border-radius:10px}
+.sheet-head .hbtn.subtle{color:var(--muted)}
+.sheet-body{overflow-y:auto;padding:14px 16px calc(28px + var(--safe-b));-webkit-overflow-scrolling:touch}
+@keyframes up{from{transform:translateY(40px);opacity:.6}to{transform:none;opacity:1}}
+@keyframes fade{from{opacity:0}to{opacity:1}}
+
+/* ---- maps ---- */
+.map{height:230px;border-radius:14px;border:1px solid var(--line);z-index:1}
+.map.tall{height:calc(100dvh - 210px)}
+.home-pin{background:#fff;border:2px solid var(--plum);border-radius:12px;padding:1px 7px;font-size:12px;font-weight:700;color:var(--plum);white-space:nowrap;box-shadow:var(--shadow);transform:translate(-50%,-100%)}
+.num-pin{width:26px;height:26px;border-radius:50%;background:var(--rose);border:2px solid #fff;color:#fff;font-size:13px;font-weight:800;display:flex;align-items:center;justify-content:center;box-shadow:var(--shadow);transform:translate(-50%,-50%)}
+.idea-pin{width:18px;height:18px;border-radius:50% 50% 50% 0;background:var(--rose);border:2px solid #fff;transform:rotate(-45deg) translate(-70%,-10%);box-shadow:var(--shadow)}
+.mem-pin{width:16px;height:16px;border-radius:50%;background:var(--plum);border:2px solid #fff;transform:translate(-50%,-50%);box-shadow:var(--shadow)}
+
+/* ---- notes / reflections ---- */
+.note-box{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:12px;margin-bottom:10px}
+.note-box .who{font-size:12.5px;font-weight:800;margin-bottom:6px;display:flex;align-items:center;gap:6px}
+.dotA,.dotB{width:9px;height:9px;border-radius:50%;display:inline-block}
+.dotA{background:var(--rose)} .dotB{background:var(--teal)}
+.note-box textarea{border:none;background:#fdf9f4;min-height:70px}
+.note-box .ro{white-space:pre-wrap;color:var(--ink);font-size:15px;min-height:22px}
+.note-box .ro.dim{color:var(--muted);font-style:italic}
+
+/* ---- journal ---- */
+.seg{display:flex;background:#f1e9df;border-radius:12px;padding:3px;margin-bottom:14px}
+.seg button{flex:1;padding:8px;border-radius:10px;font-weight:700;font-size:14px;color:var(--plum)}
+.seg button.on{background:#fff;box-shadow:var(--shadow);color:var(--rose-dark)}
+.mem-card{cursor:pointer}
+.mem-day{font-size:12.5px;font-weight:800;color:var(--rose-dark);text-transform:uppercase;letter-spacing:.06em}
+.mem-title{font-family:"Fraunces",Georgia,serif;font-size:18px;font-weight:700;margin:2px 0 6px}
+.thumbstrip{display:flex;gap:6px;overflow-x:auto;margin-top:8px;border-radius:10px}
+.thumbstrip img{height:86px;border-radius:10px;flex-shrink:0}
+.mem-icons{font-size:13px;color:var(--muted);margin-top:6px}
+
+/* ---- calendar ---- */
+.cal-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}
+.cal-head h3{margin:0;font-size:19px}
+.cal-head button{font-size:22px;padding:4px 14px;color:var(--rose-dark)}
+.cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:4px}
+.cal-dow{text-align:center;font-size:11px;font-weight:800;color:var(--muted);padding:4px 0}
+.cal-cell{aspect-ratio:1;border-radius:10px;background:var(--card);border:1px solid var(--line);position:relative;overflow:hidden;font-size:12px}
+.cal-cell.blank{background:transparent;border:none}
+.cal-cell .dnum{position:absolute;top:3px;left:5px;font-weight:700;z-index:2}
+.cal-cell.has{cursor:pointer;border-color:var(--rose)}
+.cal-cell.has .dnum{color:#fff;text-shadow:0 1px 3px rgba(0,0,0,.55)}
+.cal-cell.has.nopic{background:var(--rose-soft)}
+.cal-cell.has.nopic .dnum{color:var(--rose-dark);text-shadow:none}
+.cal-cell img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+.cal-cell .heart{position:absolute;right:3px;bottom:2px;font-size:11px;z-index:2}
+.cal-cell.today{outline:2px solid var(--gold)}
+
+/* ---- photos ---- */
+.photo-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-top:8px}
+.photo-grid img{width:100%;aspect-ratio:1;object-fit:cover;border-radius:10px;cursor:pointer}
+.add-photo{aspect-ratio:1;border:2px dashed var(--line);border-radius:10px;display:flex;flex-direction:column;align-items:center;justify-content:center;color:var(--muted);font-size:12px;font-weight:700;gap:2px;cursor:pointer}
+.add-photo .plus{font-size:24px;color:var(--rose)}
+#viewer{position:fixed;inset:0;background:rgba(20,10,14,.96);z-index:700;display:flex;flex-direction:column}
+#viewer .v-img{flex:1;display:flex;align-items:center;justify-content:center;min-height:0}
+#viewer img{max-width:100%;max-height:100%;object-fit:contain}
+#viewer .v-bar{display:flex;justify-content:space-between;align-items:center;padding:12px 18px calc(14px + var(--safe-b));color:#fff}
+#viewer .v-bar button{font-size:15px;font-weight:700;color:#fff;padding:8px 14px}
+#viewer .v-close{position:absolute;top:14px;right:14px;color:#fff;font-size:26px;padding:8px;z-index:2}
+
+/* ---- location picker ---- */
+.loc-list{margin:6px 0}
+.loc-row{display:flex;align-items:center;gap:8px;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:8px 12px;margin-bottom:6px;font-size:14px}
+.loc-row .n{width:22px;height:22px;border-radius:50%;background:var(--rose);color:#fff;font-size:12px;font-weight:800;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.loc-row .grow{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.loc-row .x{color:var(--muted);font-size:18px;padding:2px 6px}
+.searchrow{display:flex;gap:8px}
+.searchrow button{background:var(--plum);color:#fff;border-radius:12px;padding:0 16px;font-weight:700;flex-shrink:0}
+.results{margin-top:6px}
+.results button{display:block;width:100%;text-align:left;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:9px 12px;font-size:13.5px;margin-bottom:5px}
+.hint{font-size:12.5px;color:var(--muted);margin-top:6px}
+
+/* ---- buttons ---- */
+.btn{display:block;width:100%;background:var(--rose);color:#fff;font-weight:800;font-size:16px;padding:14px;border-radius:14px;text-align:center;margin-top:18px}
+.btn:active{background:var(--rose-dark)}
+.btn.ghost{background:none;color:var(--rose-dark);border:1.5px solid var(--rose);margin-top:10px}
+.btn.danger{background:none;color:#b3413f;font-size:14px;padding:8px;margin-top:14px}
+.btn.small{width:auto;display:inline-block;padding:9px 18px;font-size:14px;margin-top:8px}
+.row2{display:flex;gap:10px}.row2>*{flex:1}
+
+/* ---- setup / config screens ---- */
+.hero{text-align:center;padding:40px 10px 20px}
+.hero .big{font-size:56px}
+.hero h1{font-size:30px;margin:10px 0 6px}
+.hero p{color:var(--muted);max-width:400px;margin:0 auto}
+.whoami-btn{display:flex;align-items:center;gap:12px;width:100%;background:var(--card);border:1.5px solid var(--line);border-radius:16px;padding:18px;font-size:18px;font-weight:700;margin-bottom:12px;font-family:"Fraunces",Georgia,serif}
+.whoami-btn:active{border-color:var(--rose)}
+code{background:#f1e9df;border-radius:6px;padding:1px 6px;font-size:13px}
+.steps{text-align:left;background:var(--card);border:1px solid var(--line);border-radius:16px;padding:6px 18px;margin-top:18px}
+.steps p{margin:12px 0}
+
+/* ---- toast ---- */
+#toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(100px + var(--safe-b));background:var(--plum);color:#fff;font-size:14px;font-weight:700;padding:10px 20px;border-radius:99px;z-index:800;opacity:0;pointer-events:none;transition:opacity .25s;max-width:86vw;text-align:center}
+#toast.show{opacity:1}
+.section-title{font-size:14px;font-weight:800;color:var(--plum);margin:20px 0 8px;display:flex;justify-content:space-between;align-items:center}
+hr{border:none;border-top:1px solid var(--line);margin:18px 0}
+</style>
+</head>
+<body>
+<div id="app"></div>
+<nav id="tabbar" hidden>
+  <button id="tab-ideas" onclick="setTab('ideas')"><span class="ico">💡</span>Ideas</button>
+  <button id="tab-journal" onclick="setTab('journal')"><span class="ico">📖</span>Journal</button>
+  <button id="tab-map" onclick="setTab('map')"><span class="ico">🗺️</span>Map</button>
+  <button id="tab-settings" onclick="setTab('settings')"><span class="ico">⚙️</span>Settings</button>
+</nav>
+<button id="fab" hidden onclick="fabTap()">+</button>
+<div id="toast"></div>
+<input type="file" id="photoInput" accept="image/*" multiple hidden>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
+<script>
+/* ═══════════════════════════════════════════════════════════════
+   STEP 1 — PASTE YOUR FIREBASE CONFIG BELOW
+   (Firebase console → Project settings → Your apps → Web app)
+   Only apiKey, authDomain, and projectId are required.
+   ═══════════════════════════════════════════════════════════════ */
+const firebaseConfig = {
+  apiKey: "AIzaSyBmghUX9FXx0xmzjFS0igSrWlxEubx7YXg",
+  authDomain: "consolidated-a3254.firebaseapp.com",
+  projectId: "consolidated-a3254",
+  storageBucket: "consolidated-a3254.firebasestorage.app",
+  messagingSenderId: "721414435101",
+  appId: "1:721414435101:web:aae462a6101d14a2adf1f4"
+};
+/* ═══════════════════════════════════════════════════════════════ */
+
+// ══════════ state & helpers ══════════
+const CATS=['Food & drink','Outdoors','Arts & culture','At home','Adventure','Day trip','Other'];
+let db=null;
+const S={ready:false,cfgOk:false,settings:null,ideas:[],dates:[],photos:[],
+  me:localStorage.getItem('dj_me')||null,
+  tab:'ideas',ideaFilter:'all',journalMode:'album',
+  cal:(()=>{const d=new Date();return new Date(d.getFullYear(),d.getMonth(),1)})()};
+const $=id=>document.getElementById(id);
+const esc=s=>(s??'').toString().replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+function toast(msg,ms=1800){const t=$('toast');t.textContent=msg;t.classList.add('show');clearTimeout(t._h);t._h=setTimeout(()=>t.classList.remove('show'),ms)}
+function pname(k){return (S.settings&&S.settings[k]&&S.settings[k].name)||(k==='A'?'Partner 1':'Partner 2')}
+const photosOf=id=>S.photos.filter(p=>p.dateId===id);
+const datesOfIdea=id=>S.dates.filter(d=>d.ideaId===id);
+function fmtDay(ds){if(!ds)return'';const[y,m,d]=ds.split('-').map(Number);return new Date(y,m-1,d).toLocaleDateString(undefined,{weekday:'short',month:'short',day:'numeric',year:'numeric'})}
+function fmtTime(t){const[h,mi]=t.split(':').map(Number);return `${((h+11)%12)+1}:${String(mi).padStart(2,'0')} ${h>=12?'PM':'AM'}`}
+function todayStr(){const d=new Date();return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`}
+
+// ══════════ boot ══════════
+function boot(){
+  S.cfgOk=!/PASTE_YOUR/.test(firebaseConfig.apiKey||'');
+  if(!S.cfgOk){render();return}
+  firebase.initializeApp(firebaseConfig);
+  db=firebase.firestore();
+  db.collection('meta').doc('settings').onSnapshot(d=>{S.settings=d.exists?d.data():null;S.ready=true;render()},
+    e=>{console.error(e);S.ready=true;render();toast('Database error — check your Firestore rules',4000)});
+  db.collection('ideas').onSnapshot(q=>{S.ideas=q.docs.map(d=>({id:d.id,...d.data()}));S.ideas.sort((a,b)=>(b.created||0)-(a.created||0));render()});
+  db.collection('dates').onSnapshot(q=>{S.dates=q.docs.map(d=>({id:d.id,...d.data()}));S.dates.sort((a,b)=>(b.day||'').localeCompare(a.day||'')||(b.created||0)-(a.created||0));render()});
+  db.collection('photos').onSnapshot(q=>{S.photos=q.docs.map(d=>({id:d.id,...d.data()}));S.photos.sort((a,b)=>(a.created||0)-(b.created||0));render();refreshPhotoGrid()});
+}
+
+// ══════════ main render ══════════
+function render(){
+  const app=$('app'),tb=$('tabbar'),fab=$('fab');
+  const fo=document.activeElement;
+  if(fo&&app.contains(fo)&&/INPUT|TEXTAREA|SELECT/.test(fo.tagName))return;
+  if(!S.cfgOk){tb.hidden=true;fab.hidden=true;app.innerHTML=configHelp();return}
+  if(!S.ready){app.innerHTML='<div class="hero"><div class="big">💌</div><p>Loading…</p></div>';return}
+  if(!S.settings){tb.hidden=true;fab.hidden=true;app.innerHTML=setupScreen();return}
+  if(!S.me){tb.hidden=true;fab.hidden=true;app.innerHTML=whoAmI();return}
+  tb.hidden=false;
+  ['ideas','journal','map','settings'].forEach(t=>$('tab-'+t).classList.toggle('on',S.tab===t));
+  fab.hidden=!(S.tab==='ideas'||S.tab==='journal');
+  if(S.tab==='ideas')app.innerHTML=ideasView();
+  else if(S.tab==='journal')app.innerHTML=journalView();
+  else if(S.tab==='map'){app.innerHTML=mapView();setTimeout(drawBigMap,30)}
+  else app.innerHTML=settingsView();
+}
+function setTab(t){S.tab=t;render();window.scrollTo(0,0)}
+function fabTap(){S.tab==='journal'?openDateForm():openIdeaForm()}
+
+// ══════════ overlays ══════════
+const overlayStack=[];
+function openOverlay(inner){
+  const el=document.createElement('div');el.className='overlay';
+  el.innerHTML=`<div class="sheet">${inner}</div>`;
+  el.addEventListener('click',e=>{if(e.target===el)closeTop()});
+  document.body.appendChild(el);overlayStack.push(el);return el;
+}
+function closeTop(){const el=overlayStack.pop();if(el)el.remove()}
+function closeAll(){while(overlayStack.length)closeTop()}
+
+// ══════════ maps ══════════
+function mkMap(elId){
+  const m=L.map(elId,{zoomControl:false,scrollWheelZoom:false});
+  L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© OpenStreetMap'}).addTo(m);
+  return m;
+}
+function homeMarkers(m){
+  const pts=[];
+  (S.settings&&S.settings.homes||[]).forEach(h=>{
+    if(h&&h.lat!=null){
+      L.marker([h.lat,h.lng],{icon:L.divIcon({className:'',html:`<div class="home-pin">🏠 ${esc(h.label||'')}</div>`,iconSize:[0,0]}),zIndexOffset:500}).addTo(m);
+      pts.push([h.lat,h.lng]);
+    }});
+  return pts;
+}
+function fit(m,pts){
+  if(!pts.length)m.setView([33.749,-84.388],11);
+  else if(pts.length===1)m.setView(pts[0],14);
+  else m.fitBounds(pts,{padding:[40,40]});
+}
+function addNumPin(m,l,ix,total){
+  const html=`<div class="num-pin">${(!total||total<=1)?'❤':ix+1}</div>`;
+  L.marker([l.lat,l.lng],{icon:L.divIcon({className:'',html,iconSize:[0,0]})}).addTo(m).bindPopup(esc(l.name));
+}
+
+// ══════════ notes (shared by ideas & memories) ══════════
+function noteBoxes(kind,id,notes){
+  return ['A','B'].map(k=>{
+    const mine=k===S.me,v=(notes&&notes[k])||'';
+    return `<div class="note-box"><div class="who"><span class="dot${k}"></span>${esc(pname(k))}${mine?' (you)':''}</div>
+    ${mine?`<textarea id="nb-${kind}-${k}" placeholder="${kind==='idea'?'Details, links, cravings, dreams…':'What do you remember? How did it feel?'}" onblur="saveNote('${kind}','${id}','${k}')">${esc(v)}</textarea>`
+          :`<div class="ro ${v?'':'dim'}">${v?esc(v):'Nothing written yet'}</div>`}</div>`;
+  }).join('');
+}
+function saveNote(kind,id,k){
+  const el=$(`nb-${kind}-${k}`);if(!el)return;
+  const coll=kind==='idea'?'ideas':'dates',field=kind==='idea'?'notes':'refl';
+  db.collection(coll).doc(id).set({[field]:{[k]:el.value.trim()}},{merge:true}).then(()=>toast('Saved ✓'));
+}
+
+// ══════════ starter list (one-tap import on first run) ══════════
+const SEED=[
+ {t:'Clay night / pottery class',c:'Arts & culture',d:'Options:\n• Atlanta Clay Works\n• MudFire\n• Grit Ceramics\n• Cabbagetown Art Center\n• Spruill Center for the Arts'},
+ {t:'Farmers market',c:'Food & drink',d:'Grant Park Farmers Market — Sundays 9am–1pm',l:{name:'Grant Park',lat:33.7373,lng:-84.3722}},
+ {t:'Oakland Cemetery',c:'Outdoors',l:{name:'Oakland Cemetery',lat:33.7480,lng:-84.3715}},
+ {t:'Cooking/baking at home 😊',c:'At home'},
+ {t:'Ice cream making potato',c:'At home'},
+ {t:'Bagels',c:'At home'},
+ {t:'Art studios',c:'Arts & culture'},
+ {t:'Concert',c:'Arts & culture'},
+ {t:'Indoor skydiving',c:'Adventure'},
+ {t:'Chastain Park + restaurant',c:'Outdoors',l:{name:'Chastain Park',lat:33.8790,lng:-84.3880}},
+ {t:'GT campus',c:'Outdoors',l:{name:'Georgia Tech campus',lat:33.7756,lng:-84.3963}},
+ {t:'SCAD',c:'Arts & culture'},
+ {t:'Climbing',c:'Adventure'},
+ {t:'Safari park / animal drive',c:'Day trip',d:'Options:\n• ATL Safari Park\n• NoGa Wild (North Georgia Wildlife & Safari Park)\n• Pettit Creek Farms\n• Wild Animal Safari (Pine Mountain)'},
+ {t:'Zoo Atlanta',c:'Outdoors',l:{name:'Zoo Atlanta',lat:33.7335,lng:-84.3717}},
+ {t:'Fernbank',c:'Arts & culture',l:{name:'Fernbank Museum',lat:33.7745,lng:-84.3280}},
+ {t:'Vinyl listening room',c:'Arts & culture'},
+ {t:'Comedy show',c:'Arts & culture'},
+ {t:'Roller skating',c:'Adventure',d:'Skate shortlist: RB Cruiser, Zetrablade, Oxelo MF500'},
+ {t:'Getaway cabin',c:'Day trip'},
+ {t:'Stargazing / meteor shower',c:'Outdoors'},
+ {t:'Blue Ridge railway',c:'Day trip',d:'Blue Ridge Scenic Railway — plus that personal rail-car ride to track down again?'},
+ {t:'Ruby Chow’s',c:'Food & drink'},
+ {t:'Danbi',c:'Food & drink'},
+ {t:'Paris Banh Mi',c:'Food & drink'},
+ {t:'Home grown',c:'Food & drink'},
+ {t:'Flying Biscuit',c:'Food & drink'},
+ {t:'Naga Bistro / Snackboxe',c:'Food & drink'},
+ {t:'Buford Highway food crawl 🤣',c:'Food & drink',d:'Pretty much all of it'},
+ {t:'Panther Creek hike',c:'Outdoors',l:{name:'Panther Creek Trailhead',lat:34.6970,lng:-83.4180}},
+ {t:'Arabia Mountain hike',c:'Outdoors',l:{name:'Arabia Mountain',lat:33.6640,lng:-84.1160}},
+ {t:'Cloudland Canyon hike',c:'Outdoors',l:{name:'Cloudland Canyon State Park',lat:34.8360,lng:-85.4840}},
+ {t:'Amicalola Falls hike',c:'Outdoors',l:{name:'Amicalola Falls State Park',lat:34.5590,lng:-84.2460}},
+ {t:'Bell Mountain',c:'Outdoors',d:'Drive-up, very steep, not much of a hike — big views',l:{name:'Bell Mountain, Hiawassee',lat:34.9450,lng:-83.6950}},
+ {t:'Bamboo forest hike',c:'Outdoors',d:'East Palisades bamboo forest on the Chattahoochee',l:{name:'East Palisades Trailhead',lat:33.8770,lng:-84.4450}},
+ {t:'Movie nights 🎬',c:'At home',d:'The watchlist:\nSpiderman · Fantastic Beasts · Onward · The Wild Robot · Knives Out · Fantastic Mr. Fox · Isle of Dogs · Palm Springs · Big Hero 6 · The Prestige · The Martian · Project Hail Mary · The Odyssey · anything Ghibli · The Secret Life of Walter Mitty · Before Sunrise · Big Fish · Moonrise Kingdom · The Life Aquatic with Steve Zissou · Coco · La La Land · Flipped · Edward Scissorhands · The Fall (2006) · The Gorge · Follemente · Eternity · anything Wes Anderson / Tim Burton · One Night Only · Inside Out · The Mitchells vs the Machines · Monsters vs Aliens · Ne Zha · Pixar Gatto (2027) · Eternal Sunshine of the Spotless Mind · A Real Pain · Wildwood'}
+];
+async function importSeed(){
+  toast('Importing your list…',15000);
+  const batch=db.batch(),now=Date.now();
+  SEED.forEach((s,i)=>{
+    const ref=db.collection('ideas').doc();
+    batch.set(ref,{title:s.t,category:s.c,desc:s.d||'',loc:s.l||null,notes:{A:'',B:''},created:now-i});
+  });
+  await batch.commit();
+  toast(SEED.length+' ideas imported 💡 (map pins are approximate — edit any idea to fix one)',3500);
+}
+
+// ══════════ ideas ══════════
+function ideasView(){
+  const f=S.ideaFilter;
+  let list=S.ideas;
+  if(f==='todo')list=list.filter(i=>!datesOfIdea(i.id).length);
+  else if(f==='done')list=list.filter(i=>datesOfIdea(i.id).length);
+  else if(f!=='all')list=list.filter(i=>i.category===f);
+  const cards=list.map(i=>{
+    const done=datesOfIdea(i.id).length;
+    return `<div class="card idea-card" onclick="openIdea('${i.id}')">
+      <div class="grow"><p class="idea-title">${esc(i.title)}</p>
+      <div class="idea-meta">${i.category?`<span class="chip plain">${esc(i.category)}</span>`:''}${i.loc?`<span>📍 ${esc(i.loc.name)}</span>`:''}</div></div>
+      ${done?`<span class="done-badge">✓ ${done===1?'done':done+'×'}</span>`:''}</div>`;
+  }).join('');
+  return `<h1 class="screen-title">Date ideas</h1><p class="screen-sub">${S.ideas.length} idea${S.ideas.length===1?'':'s'} and counting</p>
+  <div class="filters">${['all','todo','done'].concat(CATS).map(k=>`<button class="${f===k?'on':''}" onclick="setIdeaFilter(this)" data-f="${esc(k)}">${k==='all'?'All':k==='todo'?'To do':k==='done'?'Done':esc(k)}</button>`).join('')}</div>
+  ${cards||`<div class="empty"><div class="big">💡</div>No ideas here yet.<br>Tap <b>+</b> to add one!${S.ideas.length?'':`<br><button class="btn small" style="margin-top:16px" onclick="importSeed()">📥 Import our list (${SEED.length} ideas)</button>`}</div>`}`;
+}
+function setIdeaFilter(btn){S.ideaFilter=btn.dataset.f;render()}
+
+function openIdea(id){
+  const i=S.ideas.find(x=>x.id===id);if(!i)return;
+  const done=datesOfIdea(id);
+  openOverlay(`
+   <div class="sheet-head"><button class="hbtn subtle" onclick="closeTop()">✕</button><h2>${esc(i.title)}</h2><button class="hbtn" onclick="openIdeaForm('${id}')">Edit</button></div>
+   <div class="sheet-body">
+     ${i.category?`<span class="chip plain">${esc(i.category)}</span>`:''}
+     ${i.desc?`<p style="margin:10px 0 4px;white-space:pre-wrap">${esc(i.desc)}</p>`:''}
+     ${i.loc?`<div class="section-title">📍 ${esc(i.loc.name)}</div><div id="ideamap" class="map"></div>`:''}
+     <div class="section-title">Notes</div>
+     ${noteBoxes('idea',id,i.notes)}
+     ${done.length?`<div class="section-title">In the journal</div>`+done.map(d=>`<div class="card mem-card" onclick="openDate('${d.id}')"><span class="mem-day">${fmtDay(d.day)}</span><div class="mem-title">${esc(d.title)}</div></div>`).join(''):''}
+     <button class="btn" onclick="openDateForm(null,'${id}')">💘 We did this — log it</button>
+     <button class="btn danger" onclick="delIdea('${id}')">Delete idea</button>
+   </div>`);
+  if(i.loc)setTimeout(()=>{const m=mkMap('ideamap');const pts=homeMarkers(m);addNumPin(m,i.loc,0,1);pts.push([i.loc.lat,i.loc.lng]);fit(m,pts)},30);
+}
+function delIdea(id){
+  if(!confirm('Delete this idea? (Logged memories are kept.)'))return;
+  db.collection('ideas').doc(id).delete().then(()=>{closeAll();toast('Deleted')});
+}
+
+// form temp state
+let F=null;
+function openIdeaForm(id){
+  const i=id?S.ideas.find(x=>x.id===id):null;
+  F={locs:i&&i.loc?[{...i.loc}]:[],max:1};
+  openOverlay(`
+   <div class="sheet-head"><button class="hbtn subtle" onclick="closeTop()">Cancel</button><h2>${i?'Edit idea':'New idea'}</h2><button class="hbtn" onclick="saveIdea('${id||''}')">Save</button></div>
+   <div class="sheet-body">
+     <label>Title</label><input id="f-title" value="${esc(i?i.title:'')}" placeholder="Picnic at the botanical garden">
+     <label>Category</label><select id="f-cat">${CATS.map(c=>`<option ${i&&i.category===c?'selected':''}>${c}</option>`).join('')}</select>
+     <label>Details</label><textarea id="f-desc" placeholder="Anything worth remembering…">${esc(i?i.desc:'')}</textarea>
+     <label>Location</label>${locPickerHTML()}
+   </div>`);
+  drawLocPicker();
+}
+function saveIdea(id){
+  const title=$('f-title').value.trim();if(!title)return toast('Give it a title 💛');
+  const data={title,category:$('f-cat').value,desc:$('f-desc').value.trim(),loc:F.locs[0]||null};
+  const p=id?db.collection('ideas').doc(id).set(data,{merge:true}):db.collection('ideas').add({...data,notes:{A:'',B:''},created:Date.now()});
+  p.then(()=>{closeTop();if(id){closeTop();openIdea(id)}toast('Saved ✓')});
+}
+
+// ══════════ location picker ══════════
+let pickMap=null;
+function locPickerHTML(){return `<div id="locwrap" class="loc-list"></div>
+ <div class="searchrow"><input id="loc-q" placeholder="Search a place or address" onkeydown="if(event.key==='Enter'){event.preventDefault();locSearch()}"><button onclick="locSearch()">Search</button></div>
+ <div id="loc-results" class="results"></div>
+ <div class="hint">Search above, or tap the map to drop a pin.</div>
+ <div id="pickmap" class="map" style="height:180px;margin-top:8px"></div>`}
+function drawLocPicker(){
+  const wrap=$('locwrap');if(!wrap)return;
+  wrap.innerHTML=F.locs.map((l,ix)=>`<div class="loc-row">${F.max>1?`<span class="n">${ix+1}</span>`:'📍'}<span class="grow">${esc(l.name)}</span><button class="x" onclick="rmLoc(${ix})">✕</button></div>`).join('');
+  setTimeout(()=>{
+    const el=$('pickmap');if(!el)return;
+    if(pickMap){try{pickMap.remove()}catch(e){}pickMap=null}
+    pickMap=mkMap('pickmap');
+    const pts=homeMarkers(pickMap);
+    F.locs.forEach((l,ix)=>{addNumPin(pickMap,l,ix,F.locs.length>1?F.locs.length:1);pts.push([l.lat,l.lng])});
+    fit(pickMap,pts);
+    pickMap.on('click',e=>{
+      const name=prompt('Name this spot:','');if(name===null)return;
+      addLoc({name:name||'Pinned spot',lat:+e.latlng.lat.toFixed(6),lng:+e.latlng.lng.toFixed(6)});
+    });
+  },30);
+}
+function rmLoc(ix){F.locs.splice(ix,1);drawLocPicker()}
+function addLoc(l){
+  if(F.max===1)F.locs=[l];
+  else if(F.locs.length>=F.max)return toast('That’s a lot of stops! (max '+F.max+')');
+  else F.locs.push(l);
+  if($('loc-results'))$('loc-results').innerHTML='';
+  if($('loc-q'))$('loc-q').value='';
+  drawLocPicker();
+}
+const shortName=s=>s.split(',').slice(0,2).join(',');
+async function locSearch(){
+  const q=$('loc-q').value.trim();if(!q)return;
+  $('loc-results').innerHTML='<div class="hint">Searching…</div>';
+  try{
+    const r=await fetch(`https://nominatim.openstreetmap.org/search?format=json&limit=5&q=${encodeURIComponent(q)}`);
+    const js=await r.json();
+    $('loc-results').innerHTML=js.length?js.map(p=>{
+      const payload=JSON.stringify({name:shortName(p.display_name),lat:+p.lat,lng:+p.lon}).replace(/'/g,'&#39;').replace(/"/g,'&quot;');
+      return `<button onclick='addLoc(JSON.parse(this.dataset.l))' data-l="${payload}">📍 ${esc(p.display_name)}</button>`;
+    }).join(''):'<div class="hint">No results — try adding the city or neighborhood.</div>';
+  }catch(e){$('loc-results').innerHTML='<div class="hint">Search failed — check your connection.</div>'}
+}
+// ══════════ journal ══════════
+function refIcons(d){
+  const r=d.refl||{},parts=[];
+  ['A','B'].forEach(k=>{if((r[k]||'').trim())parts.push(`<span class="dot${k}"></span>`)});
+  return parts.length?` · ✍️ ${parts.join(' ')}`:'';
+}
+function journalView(){
+  const seg=`<div class="seg"><button class="${S.journalMode==='album'?'on':''}" onclick="S.journalMode='album';render()">📸 Album</button><button class="${S.journalMode==='cal'?'on':''}" onclick="S.journalMode='cal';render()">🗓️ Calendar</button></div>`;
+  let body;
+  if(!S.dates.length)body=`<div class="empty"><div class="big">📖</div>No memories yet.<br>Tap <b>+</b> to record your first date —<br>past ones count too!</div>`;
+  else if(S.journalMode==='album')body=S.dates.map(d=>{
+    const ph=photosOf(d.id);
+    return `<div class="card mem-card" onclick="openDate('${d.id}')">
+      <span class="mem-day">${fmtDay(d.day)}${d.time?' · '+fmtTime(d.time):''}</span>
+      <div class="mem-title">${esc(d.title)}</div>
+      ${(d.locs||[]).length?`<div class="idea-meta">📍 ${(d.locs||[]).map(l=>esc(l.name)).join(' → ')}</div>`:''}
+      ${ph.length?`<div class="thumbstrip">${ph.slice(0,8).map(p=>`<img src="${p.thumb}">`).join('')}</div>`:''}
+      <div class="mem-icons">${ph.length?`📷 ${ph.length}`:''}${refIcons(d)}</div></div>`;
+  }).join('');
+  else body=calendarView();
+  return `<h1 class="screen-title">Our journal</h1><p class="screen-sub">${S.dates.length} memor${S.dates.length===1?'y':'ies'} so far</p>${seg}${body}`;
+}
+function calendarView(){
+  const y=S.cal.getFullYear(),mo=S.cal.getMonth();
+  const startDow=new Date(y,mo,1).getDay(),dim=new Date(y,mo+1,0).getDate();
+  const byDay={};S.dates.forEach(d=>{(byDay[d.day]=byDay[d.day]||[]).push(d)});
+  const tstr=todayStr();
+  let cells='';
+  for(let i=0;i<startDow;i++)cells+='<div class="cal-cell blank"></div>';
+  for(let dd=1;dd<=dim;dd++){
+    const ds=`${y}-${String(mo+1).padStart(2,'0')}-${String(dd).padStart(2,'0')}`;
+    const es=byDay[ds]||[];
+    if(!es.length){cells+=`<div class="cal-cell ${ds===tstr?'today':''}"><span class="dnum">${dd}</span></div>`;continue}
+    const ph=photosOf(es[0].id)[0];
+    cells+=`<div class="cal-cell has ${ph?'':'nopic'} ${ds===tstr?'today':''}" onclick="calTap('${ds}')">
+      ${ph?`<img src="${ph.thumb}">`:''}<span class="dnum">${dd}</span><span class="heart">${es.length>1?'💕':'❤️'}</span></div>`;
+  }
+  const mn=S.cal.toLocaleDateString(undefined,{month:'long',year:'numeric'});
+  return `<div class="cal-head"><button onclick="calNav(-1)">‹</button><h3>${mn}</h3><button onclick="calNav(1)">›</button></div>
+  <div class="cal-grid">${['S','M','T','W','T','F','S'].map(x=>`<div class="cal-dow">${x}</div>`).join('')}${cells}</div>`;
+}
+function calNav(n){S.cal=new Date(S.cal.getFullYear(),S.cal.getMonth()+n,1);render()}
+function calTap(ds){
+  const es=S.dates.filter(d=>d.day===ds);
+  if(es.length===1)return openDate(es[0].id);
+  openOverlay(`<div class="sheet-head"><button class="hbtn subtle" onclick="closeTop()">✕</button><h2>${fmtDay(ds)}</h2><span></span></div>
+   <div class="sheet-body">${es.map(d=>`<div class="card mem-card" onclick="closeTop();openDate('${d.id}')"><div class="mem-title">${esc(d.title)}</div></div>`).join('')}</div>`);
+}
+
+// ══════════ log / edit a date ══════════
+function openDateForm(id,ideaId){
+  const d=id?S.dates.find(x=>x.id===id):null;
+  const idea=ideaId?S.ideas.find(x=>x.id===ideaId):null;
+  F={locs:d?(d.locs||[]).map(l=>({...l})):(idea&&idea.loc?[{...idea.loc}]:[]),max:8};
+  openOverlay(`
+   <div class="sheet-head"><button class="hbtn subtle" onclick="closeTop()">Cancel</button><h2>${d?'Edit memory':'Log a date'}</h2><button class="hbtn" onclick="saveDate('${id||''}')">Save</button></div>
+   <div class="sheet-body">
+     <label>What was the date?</label><input id="f-title" value="${esc(d?d.title:(idea?idea.title:''))}" placeholder="Sunset picnic + gelato walk">
+     <div class="row2"><div><label>Day</label><input type="date" id="f-day" value="${d?d.day:todayStr()}"></div>
+     <div><label>Time (optional)</label><input type="time" id="f-time" value="${d&&d.time?d.time:''}"></div></div>
+     <label>From an idea on our list?</label>
+     <select id="f-idea"><option value="">— just a spontaneous one —</option>${S.ideas.map(i=>`<option value="${i.id}" ${(d?d.ideaId:ideaId)===i.id?'selected':''}>${esc(i.title)}</option>`).join('')}</select>
+     <label>Stops along the way</label>${locPickerHTML()}
+     <div class="hint" style="margin-top:2px">Add every place you went — with 2+ stops the map draws your route through the day. Photos are added on the next screen.</div>
+   </div>`);
+  drawLocPicker();
+}
+function saveDate(id){
+  const title=$('f-title').value.trim();if(!title)return toast('Give it a title 💛');
+  const day=$('f-day').value;if(!day)return toast('Pick the day');
+  const data={title,day,time:$('f-time').value||'',ideaId:$('f-idea').value||null,locs:F.locs};
+  if(id)db.collection('dates').doc(id).set(data,{merge:true}).then(()=>{closeTop();closeTop();openDate(id);toast('Saved ✓')});
+  else db.collection('dates').add({...data,refl:{A:'',B:''},created:Date.now()}).then(r=>{closeAll();openDate(r.id);toast('Logged! Now add photos & thoughts 💕',2600)});
+}
+
+// ══════════ memory detail ══════════
+let curDateId=null;
+function openDate(id){
+  const d=S.dates.find(x=>x.id===id);if(!d)return;
+  curDateId=id;
+  const idea=d.ideaId?S.ideas.find(i=>i.id===d.ideaId):null;
+  const locs=d.locs||[];
+  openOverlay(`
+   <div class="sheet-head"><button class="hbtn subtle" onclick="curDateId=null;closeTop()">✕</button><h2>${esc(d.title)}</h2><button class="hbtn" onclick="openDateForm('${id}')">Edit</button></div>
+   <div class="sheet-body">
+     <span class="mem-day">${fmtDay(d.day)}${d.time?' · '+fmtTime(d.time):''}</span>
+     ${idea?`<div style="margin-top:6px"><span class="chip" onclick="openIdea('${idea.id}')">💡 ${esc(idea.title)}</span></div>`:''}
+     ${locs.length?`<div class="section-title">${locs.length>1?'Our route that day':'Where'}</div><div id="datemap" class="map"></div>
+       <div class="loc-list" style="margin-top:8px">${locs.map((l,ix)=>`<div class="loc-row">${locs.length>1?`<span class="n">${ix+1}</span>`:'📍'}<span class="grow">${esc(l.name)}</span></div>`).join('')}</div>`:''}
+     <div class="section-title">Photos from the day</div>
+     <div id="pgrid" class="photo-grid">${photoGridHTML(id)}</div>
+     <div class="section-title">Our thoughts</div>
+     ${noteBoxes('date',id,d.refl)}
+     <button class="btn danger" onclick="delDate('${id}')">Delete this memory</button>
+   </div>`);
+  if(locs.length)setTimeout(()=>{
+    const m=mkMap('datemap');const pts=homeMarkers(m);
+    locs.forEach((l,ix)=>{addNumPin(m,l,ix,locs.length);pts.push([l.lat,l.lng])});
+    if(locs.length>1)L.polyline(locs.map(l=>[l.lat,l.lng]),{color:'#a83a55',weight:3,dashArray:'6 8'}).addTo(m);
+    fit(m,pts);
+  },30);
+}
+async function delDate(id){
+  if(!confirm('Delete this memory and its photos?'))return;
+  toast('Deleting…',6000);
+  for(const p of photosOf(id)){
+    await db.collection('photos').doc(p.id).delete();
+    if(p.fullId)await db.collection('photoFulls').doc(p.fullId).delete();
+  }
+  await db.collection('dates').doc(id).delete();
+  curDateId=null;closeAll();toast('Deleted');
+}
+
+// ══════════ photos ══════════
+function photoGridHTML(dateId){
+  return photosOf(dateId).map((p,ix)=>`<img src="${p.thumb}" onclick="openViewer('${dateId}',${ix})">`).join('')
+   +`<div class="add-photo" onclick="pickPhotos('${dateId}')"><span class="plus">＋</span>Add photos</div>`;
+}
+function refreshPhotoGrid(){
+  if(!curDateId)return;
+  const el=$('pgrid');if(el)el.innerHTML=photoGridHTML(curDateId);
+}
+let photoTarget=null;
+function pickPhotos(dateId){photoTarget=dateId;const inp=$('photoInput');inp.value='';inp.click()}
+
+async function loadBitmap(file){
+  try{return await createImageBitmap(file)}
+  catch(e){return await new Promise((res,rej)=>{const img=new Image();img.onload=()=>res(img);img.onerror=rej;img.src=URL.createObjectURL(file)})}
+}
+function drawScaled(src,maxDim,q){
+  const w=src.width,h=src.height,sc=Math.min(1,maxDim/Math.max(w,h));
+  const c=document.createElement('canvas');c.width=Math.max(1,Math.round(w*sc));c.height=Math.max(1,Math.round(h*sc));
+  c.getContext('2d').drawImage(src,0,0,c.width,c.height);
+  return c.toDataURL('image/jpeg',q);
+}
+async function compressPhoto(file){
+  const bmp=await loadBitmap(file);
+  let dim=1600,q=0.82,full=drawScaled(bmp,dim,q);
+  while(full.length>930000&&q>0.45){q-=0.08;full=drawScaled(bmp,dim,q)}
+  while(full.length>930000&&dim>640){dim=Math.round(dim*0.8);full=drawScaled(bmp,dim,q)}
+  const thumb=drawScaled(bmp,400,0.68);
+  return {full,thumb};
+}
+
+// ══════════ fullscreen viewer ══════════
+let V=null;
+function openViewer(dateId,ix){
+  V={list:photosOf(dateId),ix};
+  const el=document.createElement('div');el.id='viewer';
+  el.innerHTML=`<button class="v-close" onclick="closeViewer()">✕</button>
+   <div class="v-img"><img id="v-img" src=""></div>
+   <div class="v-bar"><button onclick="vNav(-1)">‹ Prev</button><button id="v-count" style="font-weight:400;color:#ccb"></button><button onclick="vNav(1)">Next ›</button></div>
+   <div style="text-align:center;padding-bottom:calc(12px + var(--safe-b))"><button style="color:#e8909a;font-size:13px" onclick="vDelete()">Delete this photo</button></div>`;
+  document.body.appendChild(el);
+  vShow();
+}
+async function vShow(){
+  const p=V.list[V.ix];
+  $('v-count').textContent=`${V.ix+1} / ${V.list.length}`;
+  $('v-img').src=p.thumb;
+  if(!p._full){try{const d=await db.collection('photoFulls').doc(p.fullId).get();p._full=(d.data()||{}).data}catch(e){}}
+  if(V&&p._full&&V.list[V.ix]===p)$('v-img').src=p._full;
+}
+function vNav(n){if(!V)return;V.ix=(V.ix+n+V.list.length)%V.list.length;vShow()}
+function closeViewer(){const el=$('viewer');if(el)el.remove();V=null}
+async function vDelete(){
+  if(!V||!confirm('Delete this photo?'))return;
+  const p=V.list[V.ix];
+  await db.collection('photos').doc(p.id).delete();
+  if(p.fullId)await db.collection('photoFulls').doc(p.fullId).delete();
+  closeViewer();toast('Photo deleted');
+}
+
+// ══════════ big map ══════════
+let bigMap=null,bigShow={ideas:true,mems:true};
+function mapView(){return `<h1 class="screen-title">Our map</h1><p class="screen-sub">Where we've been & where we're going</p>
+ <div class="filters"><button class="${bigShow.ideas?'on':''}" onclick="bigShow.ideas=!bigShow.ideas;render()">💡 Ideas</button><button class="${bigShow.mems?'on':''}" onclick="bigShow.mems=!bigShow.mems;render()">❤️ Memories</button></div>
+ <div id="bigmap" class="map tall"></div>`}
+function drawBigMap(){
+  const el=$('bigmap');if(!el)return;
+  if(bigMap){try{bigMap.remove()}catch(e){}bigMap=null}
+  bigMap=mkMap('bigmap');bigMap.scrollWheelZoom.enable();
+  const pts=homeMarkers(bigMap);
+  if(bigShow.ideas)S.ideas.forEach(i=>{if(i.loc){
+    L.marker([i.loc.lat,i.loc.lng],{icon:L.divIcon({className:'',html:'<div class="idea-pin"></div>',iconSize:[0,0]})}).addTo(bigMap)
+     .bindPopup(`<b>💡 ${esc(i.title)}</b><br>${esc(i.loc.name)}`);
+    pts.push([i.loc.lat,i.loc.lng]);
+  }});
+  if(bigShow.mems)S.dates.forEach(d=>(d.locs||[]).forEach(l=>{
+    L.marker([l.lat,l.lng],{icon:L.divIcon({className:'',html:'<div class="mem-pin"></div>',iconSize:[0,0]})}).addTo(bigMap)
+     .bindPopup(`<b>❤️ ${esc(d.title)}</b><br>${fmtDay(d.day)}`);
+    pts.push([l.lat,l.lng]);
+  }));
+  fit(bigMap,pts);
+}
+
+// ══════════ settings ══════════
+function settingsView(){
+  const st=S.settings,homes=st.homes||[];
+  return `<h1 class="screen-title">Settings</h1><p class="screen-sub">You two, your homes, your data</p>
+   <div class="card"><div class="section-title" style="margin-top:0">Names</div>
+     <label><span class="dotA"></span> Partner 1</label><input id="s-nameA" value="${esc(st.A?st.A.name:'')}" onblur="saveNames()">
+     <label><span class="dotB"></span> Partner 2</label><input id="s-nameB" value="${esc(st.B?st.B.name:'')}" onblur="saveNames()">
+   </div>
+   <div class="card"><div class="section-title" style="margin-top:0">Who's using this phone?</div>
+     <div class="row2">
+       <button class="whoami-btn" style="margin-bottom:0;${S.me==='A'?'border-color:var(--rose)':''}" onclick="setMe('A')"><span class="dotA"></span>${esc(pname('A'))}</button>
+       <button class="whoami-btn" style="margin-bottom:0;${S.me==='B'?'border-color:var(--teal)':''}" onclick="setMe('B')"><span class="dotB"></span>${esc(pname('B'))}</button>
+     </div></div>
+   <div class="card"><div class="section-title" style="margin-top:0">Home base 🏠</div>
+     <p class="hint" style="margin-top:0">Set each apartment so every map shows how far a date is from home.</p>
+     ${['A','B'].map((k,ix)=>{const h=homes[ix];return `<label>${esc(pname(k))}'s place</label>
+       <div class="loc-row">${h&&h.lat!=null?`<span class="grow">📍 ${esc(h.label)}</span>`:`<span class="grow" style="color:var(--muted)">Not set yet</span>`}<button class="x" style="color:var(--rose-dark);font-size:14px;font-weight:700" onclick="pickHome(${ix})">${h&&h.lat!=null?'Change':'Set'}</button></div>`}).join('')}
+   </div>
+   <div class="card"><div class="section-title" style="margin-top:0">Backup</div>
+     <p class="hint" style="margin-top:0">Downloads everything — ideas, memories, notes, and photos — as one JSON file. Do it once in a while!</p>
+     <button class="btn small" onclick="backup()">Download backup</button></div>`;
+}
+function saveNames(){
+  const a=$('s-nameA'),b=$('s-nameB');if(!a||!b)return;
+  db.collection('meta').doc('settings').set({A:{name:a.value.trim()||'Partner 1'},B:{name:b.value.trim()||'Partner 2'}},{merge:true}).then(()=>toast('Saved ✓'));
+}
+function setMe(k){S.me=k;localStorage.setItem('dj_me',k);render();toast(`Hi, ${pname(k)}! 💛`)}
+function pickHome(ix){
+  F={locs:[],max:1,homeIx:ix};
+  const h=(S.settings.homes||[])[ix];
+  if(h&&h.lat!=null)F.locs=[{name:h.label,lat:h.lat,lng:h.lng}];
+  openOverlay(`<div class="sheet-head"><button class="hbtn subtle" onclick="closeTop()">Cancel</button><h2>Set home base</h2><button class="hbtn" onclick="saveHome()">Save</button></div>
+   <div class="sheet-body"><label>Label</label><input id="f-hlabel" value="${esc(h&&h.label?h.label:pname(ix===0?'A':'B')+'’s place')}">
+   <label>Location</label>${locPickerHTML()}</div>`);
+  drawLocPicker();
+}
+function saveHome(){
+  const l=F.locs[0];if(!l)return toast('Pick a location first');
+  const homes=(S.settings.homes||[]).slice();while(homes.length<2)homes.push(null);
+  homes[F.homeIx]={label:$('f-hlabel').value.trim()||l.name,lat:l.lat,lng:l.lng};
+  db.collection('meta').doc('settings').set({homes},{merge:true}).then(()=>{closeTop();toast('Home saved 🏠')});
+}
+async function backup(){
+  toast('Preparing backup…',10000);
+  const fulls={};
+  for(const p of S.photos){
+    try{const d=await db.collection('photoFulls').doc(p.fullId).get();fulls[p.fullId]=(d.data()||{}).data||null}catch(e){}
+  }
+  const blob=new Blob([JSON.stringify({exported:new Date().toISOString(),settings:S.settings,ideas:S.ideas,dates:S.dates,photos:S.photos.map(p=>({...p,thumb:p.thumb})),photoFulls:fulls})],{type:'application/json'});
+  const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=`date-journal-backup-${todayStr()}.json`;a.click();
+  toast('Backup downloaded ✓');
+}
+
+// ══════════ first-run screens ══════════
+function setupScreen(){return `<div class="hero"><div class="big">💌</div><h1>Our Dates</h1><p>A little home for your date ideas, memories, photos, and the map of it all.</p></div>
+ <div class="card"><label>Partner 1's name</label><input id="su-a" placeholder="e.g. Mr. Soccerboy">
+ <label>Partner 2's name</label><input id="su-b" placeholder="e.g. Ms. Chairgirl">
+ <button class="btn" onclick="finishSetup()">Let's go 💘</button></div>`}
+function finishSetup(){
+  const a=$('su-a').value.trim(),b=$('su-b').value.trim();
+  if(!a||!b)return toast('Both names, please 💛');
+  db.collection('meta').doc('settings').set({A:{name:a},B:{name:b},homes:[]});
+}
+function whoAmI(){return `<div class="hero"><div class="big">👋</div><h1>Who are you?</h1><p>So your notes are saved under the right name. You can switch any time in Settings.</p></div>
+ <button class="whoami-btn" onclick="setMe('A')"><span class="dotA"></span>${esc(pname('A'))}</button>
+ <button class="whoami-btn" onclick="setMe('B')"><span class="dotB"></span>${esc(pname('B'))}</button>`}
+function configHelp(){return `<div class="hero"><div class="big">💌</div><h1>Our Dates</h1><p>Almost there — the app just needs its database keys.</p></div>
+ <div class="steps">
+ <p><b>1.</b> Go to <code>console.firebase.google.com</code> and create a free project (Spark plan — no credit card needed).</p>
+ <p><b>2.</b> In it, open <b>Build → Firestore Database → Create database</b> and pick the region closest to you.</p>
+ <p><b>3.</b> In the <b>Rules</b> tab, paste the rules from the README and hit Publish.</p>
+ <p><b>4.</b> Open <b>Project settings → Your apps</b>, add a <b>Web app</b> (the <code>&lt;/&gt;</code> icon), and copy the <code>firebaseConfig</code> block it shows you.</p>
+ <p><b>5.</b> Paste it near the top of <code>index.html</code> (look for the "STEP 1" banner), push to GitHub, and reload this page.</p>
+ </div>`}
+
+// ══════════ wire up & go ══════════
+$('photoInput').addEventListener('change',async e=>{
+  const files=[...e.target.files];
+  if(!files.length||!photoTarget)return;
+  let ok=0;
+  for(let i=0;i<files.length;i++){
+    toast(`Uploading photo ${i+1} of ${files.length}…`,60000);
+    try{
+      const {full,thumb}=await compressPhoto(files[i]);
+      const fr=await db.collection('photoFulls').add({data:full});
+      await db.collection('photos').add({dateId:photoTarget,thumb,fullId:fr.id,created:Date.now()+i});
+      ok++;
+    }catch(err){console.error(err)}
+  }
+  toast(ok===files.length?(ok>1?`${ok} photos added 💞`:'Photo added 💞'):`${ok} of ${files.length} added — one photo format didn't work`);
+});
+boot();
+render();
+</script>
+</body>
+</html>
