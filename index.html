@@ -86,6 +86,8 @@ label{display:block;font-size:13px;font-weight:700;color:var(--plum);margin:14px
 .maplinks{display:flex;gap:8px;margin-top:8px}
 .maplinks a{flex:1;text-align:center;font-size:13px;font-weight:700;color:var(--plum);background:#f1e9df;border-radius:10px;padding:8px 4px;text-decoration:none;white-space:nowrap}
 .maplinks a:active{background:var(--rose-soft)}
+.leaflet-popup-content .maplinks a{padding:6px 8px;white-space:nowrap}
+.leaflet-popup-content{min-width:170px}
 
 /* ---- notes / reflections ---- */
 .note-box{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:12px;margin-bottom:10px}
@@ -721,14 +723,9 @@ async function vDelete(){
 // ══════════ big map ══════════
 let bigMap=null,bigShow={ideas:true,mems:true};
 function mapView(){return `<h1 class="screen-title">Our map</h1><p class="screen-sub">Where we've been & where we're going</p>
- <div class="filters"><button class="${bigShow.ideas?'on':''}" onclick="bigShow.ideas=!bigShow.ideas;render()">💡 Ideas</button><button class="${bigShow.mems?'on':''}" onclick="bigShow.mems=!bigShow.mems;render()">📖 Memories</button><button onclick="openBigMapExt('a')"> Apple Maps</button><button onclick="openBigMapExt('g')">🗺️ Google Maps</button></div>
+ <div class="filters"><button class="${bigShow.ideas?'on':''}" onclick="bigShow.ideas=!bigShow.ideas;render()">💡 Ideas</button><button class="${bigShow.mems?'on':''}" onclick="bigShow.mems=!bigShow.mems;render()">📖 Memories</button></div>
  <div id="bigmap" class="map tall"></div>`}
-function openBigMapExt(which){
-  if(!bigMap)return;
-  const c=bigMap.getCenter(),z=Math.round(bigMap.getZoom());
-  const lat=c.lat.toFixed(5),lng=c.lng.toFixed(5);
-  window.open(which==='a'?`https://maps.apple.com/?ll=${lat},${lng}&z=${z}`:`https://www.google.com/maps/@${lat},${lng},${z}z`,'_blank','noopener');
-}
+let bigMemGroups={};
 function drawBigMap(){
   const el=$('bigmap');if(!el)return;
   if(bigMap){try{bigMap.remove()}catch(e){}bigMap=null}
@@ -736,15 +733,31 @@ function drawBigMap(){
   const pts=homeMarkers(bigMap);
   if(bigShow.ideas)S.ideas.forEach(i=>{if(i.loc){
     L.marker([i.loc.lat,i.loc.lng],{icon:L.divIcon({className:'',html:'<div class="idea-pin"></div>',iconSize:[0,0]})}).addTo(bigMap)
-     .bindPopup(`<b>💡 ${esc(i.title)}</b><br>${esc(i.loc.name)}`);
+     .bindPopup(`<b>💡 ${esc(i.title)}</b><br>${esc(i.loc.name)}${extMapLinks([i.loc])}`);
     pts.push([i.loc.lat,i.loc.lng]);
   }});
+  // one pin per unique memory location; its popup flashes back to the entry (or a list)
+  bigMemGroups={};
   if(bigShow.mems)S.dates.forEach(d=>(d.locs||[]).forEach(l=>{
-    L.marker([l.lat,l.lng],{icon:L.divIcon({className:'',html:'<div class="mem-pin"></div>',iconSize:[0,0]})}).addTo(bigMap)
-     .bindPopup(`<b>📖 ${esc(d.title)}</b><br>${fmtDay(d.day)}`);
-    pts.push([l.lat,l.lng]);
+    const key=l.lat+','+l.lng;
+    const g=bigMemGroups[key]=bigMemGroups[key]||{name:l.name,lat:l.lat,lng:l.lng,ids:[]};
+    if(!g.ids.includes(d.id))g.ids.push(d.id);
   }));
+  Object.entries(bigMemGroups).forEach(([key,g])=>{
+    const ds=g.ids.map(id=>S.dates.find(x=>x.id===id)).filter(Boolean);
+    const head=ds.length===1?`<b>📖 ${esc(ds[0].title)}</b><br>${fmtDay(ds[0].day)}`
+      :`<b>📖 ${ds.length} memories here</b><br>${esc(g.name)}`;
+    L.marker([g.lat,g.lng],{icon:L.divIcon({className:'',html:'<div class="mem-pin"></div>',iconSize:[0,0]})}).addTo(bigMap)
+     .bindPopup(`${head}<div class="maplinks"><a href="#" onclick="flashback('${key}');return false">⏪ Flashback</a></div>`);
+    pts.push([g.lat,g.lng]);
+  });
   fit(bigMap,pts);
+}
+function flashback(key){
+  const g=bigMemGroups[key];if(!g)return;
+  if(g.ids.length===1)return openDate(g.ids[0]);
+  openOverlay(`<div class="sheet-head"><button class="hbtn subtle" onclick="closeTop()">✕</button><h2>📖 ${esc(g.name)}</h2><span></span></div>
+   <div class="sheet-body">${g.ids.map(id=>{const d=S.dates.find(x=>x.id===id);return d?`<div class="card mem-card" onclick="closeTop();openDate('${d.id}')"><span class="mem-day">${fmtDay(d.day)}</span><div class="mem-title">${esc(d.title)}</div></div>`:''}).join('')}</div>`);
 }
 
 // ══════════ settings ══════════
