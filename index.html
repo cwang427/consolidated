@@ -131,6 +131,14 @@ label{display:block;font-size:13px;font-weight:700;color:var(--plum);margin:14px
 .photo-grid img{width:100%;aspect-ratio:1;object-fit:cover;border-radius:10px;cursor:pointer}
 .add-photo{aspect-ratio:1;border:2px dashed var(--line);border-radius:10px;display:flex;flex-direction:column;align-items:center;justify-content:center;color:var(--muted);font-size:12px;font-weight:700;gap:2px;cursor:pointer}
 .add-photo .plus{font-size:24px;color:var(--rose)}
+.arr-cell{position:relative}
+.arr-cell img{width:100%;aspect-ratio:1;object-fit:cover;border-radius:10px;display:block}
+.arr-bar{position:absolute;left:0;right:0;bottom:0;display:flex;background:rgba(61,44,51,.6);border-radius:0 0 10px 10px}
+.arr-bar button{flex:1;color:#fff;font-size:15px;font-weight:800;padding:5px 0}
+.arr-bar button:disabled{opacity:.25}
+.arr-bar button.on{color:var(--gold)}
+.cov-badge{position:absolute;top:4px;left:4px;background:var(--gold);color:#fff;font-size:10px;font-weight:800;padding:1px 7px;border-radius:99px}
+.arrange-btn{font-size:12.5px;font-weight:800;color:var(--rose-dark)}
 #viewer{position:fixed;inset:0;background:rgba(20,10,14,.96);z-index:700;display:flex;flex-direction:column}
 #viewer .v-img{flex:1;display:flex;align-items:center;justify-content:center;min-height:0}
 #viewer img{max-width:100%;max-height:100%;object-fit:contain}
@@ -226,8 +234,10 @@ const $=id=>document.getElementById(id);
 const esc=s=>(s??'').toString().replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 function toast(msg,ms=1800){const t=$('toast');t.textContent=msg;t.classList.add('show');clearTimeout(t._h);t._h=setTimeout(()=>t.classList.remove('show'),ms)}
 function pname(k){return PARTNERS[k].name}
-const photosOf=id=>S.photos.filter(p=>p.dateId===id);
-const datesOfIdea=id=>S.dates.filter(d=>d.ideaId===id);
+const photosOf=id=>S.photos.filter(p=>p.dateId===id).sort((a,b)=>((a.order??a.created)||0)-((b.order??b.created)||0));
+const liveDates=()=>S.dates.filter(d=>!d.trash);
+const datesOfIdea=id=>liveDates().filter(d=>d.ideaId===id);
+const otherOf=k=>k==='A'?'B':'A';
 function fmtDay(ds){if(!ds)return'';const[y,m,d]=ds.split('-').map(Number);return new Date(y,m-1,d).toLocaleDateString(undefined,{weekday:'short',month:'short',day:'numeric',year:'numeric'})}
 function fmtTime(t){const[h,mi]=t.split(':').map(Number);return `${((h+11)%12)+1}:${String(mi).padStart(2,'0')} ${h>=12?'PM':'AM'}`}
 function todayStr(){const d=new Date();return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`}
@@ -480,7 +490,7 @@ function locPickerHTML(){return `<div id="locwrap" class="loc-list"></div>
 function drawLocPicker(){
   const wrap=$('locwrap');if(!wrap)return;
   // the home picker's Location row shows the street address (the label holds the nickname)
-  wrap.innerHTML=F.locs.map((l,ix)=>`<div class="loc-row">${F.max>1?`<span class="n">${ix+1}</span>`:'📍'}<span class="grow">${esc(F.showAddr&&l.addr?l.addr:l.name)}</span><button class="x" onclick="rmLoc(${ix})">✕</button></div>`).join('');
+  wrap.innerHTML=F.locs.map((l,ix)=>`<div class="loc-row">${F.max>1?`<span class="n">${ix+1}</span>`:'📍'}<span class="grow">${esc(F.showAddr&&l.addr?l.addr:l.name)}</span>${F.max>1&&F.locs.length>1?`<button class="x" onclick="mvLoc(${ix},-1)" ${ix===0?'disabled style="opacity:.25"':''}>▲</button><button class="x" onclick="mvLoc(${ix},1)" ${ix===F.locs.length-1?'disabled style="opacity:.25"':''}>▼</button>`:''}<button class="x" onclick="rmLoc(${ix})">✕</button></div>`).join('');
   setTimeout(()=>{
     const el=$('pickmap');if(!el)return;
     if(pickMap){try{pickMap.remove()}catch(e){}pickMap=null}
@@ -524,6 +534,7 @@ async function updateLocAddr(){
   el2.textContent=addrCache[key]?'📮 '+addrCache[key]+' (approximate)':'Address unavailable for this spot';
 }
 function rmLoc(ix){F.locs.splice(ix,1);drawLocPicker()}
+function mvLoc(ix,n){const t=F.locs.splice(ix,1)[0];F.locs.splice(ix+n,0,t);drawLocPicker()}
 function addLoc(l){
   if(F.max===1)F.locs=[l];
   else if(F.locs.length>=F.max)return toast('That’s a lot of stops! (max '+F.max+')');
@@ -568,15 +579,15 @@ async function locSearch(){
 }
 // ══════════ journal ══════════
 function refIcons(d){
-  const r=d.refl||{},parts=[];
-  ['A','B'].forEach(k=>{if((r[k]||'').trim())parts.push(`<span class="dot${k}"></span>`)});
-  return parts.length?` · ✍️ ${parts.join(' ')}`:'';
+  const r=d.refl||{},who=['A','B'].filter(k=>(r[k]||'').trim());
+  return who.length?` · ✍️ ${who.length===2?'both':esc(pname(who[0]))}`:'';
 }
 function journalView(){
+  const live=liveDates(),trash=S.dates.filter(d=>d.trash);
   const seg=`<div class="seg"><button class="${S.journalMode==='album'?'on':''}" onclick="S.journalMode='album';render()">📸 Album</button><button class="${S.journalMode==='cal'?'on':''}" onclick="S.journalMode='cal';render()">🗓️ Calendar</button></div>`;
   let body;
-  if(!S.dates.length)body=`<div class="empty"><div class="big">📖</div>No memories yet.<br>Tap <b>+</b> to record your first date —<br>past ones count too!</div>`;
-  else if(S.journalMode==='album')body=S.dates.map(d=>{
+  if(!live.length)body=`<div class="empty"><div class="big">📖</div>No memories yet.<br>Tap <b>+</b> to record your first date —<br>past ones count too!</div>`;
+  else if(S.journalMode==='album')body=live.map(d=>{
     const ph=photosOf(d.id);
     return `<div class="card mem-card" onclick="openDate('${d.id}')">
       <span class="mem-day">${fmtDay(d.day)}${d.time?' · '+fmtTime(d.time):''}</span>
@@ -586,12 +597,19 @@ function journalView(){
       <div class="mem-icons">${ph.length?`📷 ${ph.length}`:''}${refIcons(d)}</div></div>`;
   }).join('');
   else body=calendarView();
-  return `<h1 class="screen-title">Our journal</h1><p class="screen-sub">${S.dates.length} memor${S.dates.length===1?'y':'ies'} so far</p>${seg}${body}`;
+  const trashSec=(S.journalMode==='album'&&trash.length)?`<div class="section-title">🗑️ Trash</div>`+trash.map(d=>{
+    const mine=d.trash.by===S.me;
+    return `<div class="card"><span class="mem-day">${fmtDay(d.day)}</span><div class="mem-title">${esc(d.title)}</div>
+      <p class="hint" style="margin:2px 0 8px">Moved to trash by ${esc(pname(d.trash.by))}. ${mine?`It's only deleted forever once ${esc(pname(otherOf(S.me)))} confirms.`:'Restore it, or confirm to delete it forever.'}</p>
+      <button class="btn small ghost" style="margin-top:0" onclick="restoreDate('${d.id}')">Restore</button>
+      ${mine?'':`<button class="btn small" style="background:#b3413f;margin-left:8px;margin-top:0" onclick="hardDeleteDate('${d.id}')">Delete forever</button>`}</div>`;
+  }).join(''):'';
+  return `<h1 class="screen-title">Our journal</h1><p class="screen-sub">${live.length} memor${live.length===1?'y':'ies'} so far</p>${seg}${body}${trashSec}`;
 }
 function calendarView(){
   const y=S.cal.getFullYear(),mo=S.cal.getMonth();
   const startDow=new Date(y,mo,1).getDay(),dim=new Date(y,mo+1,0).getDate();
-  const byDay={};S.dates.forEach(d=>{(byDay[d.day]=byDay[d.day]||[]).push(d)});
+  const byDay={};liveDates().forEach(d=>{(byDay[d.day]=byDay[d.day]||[]).push(d)});
   const tstr=todayStr();
   let cells='';
   for(let i=0;i<startDow;i++)cells+='<div class="cal-cell blank"></div>';
@@ -599,7 +617,7 @@ function calendarView(){
     const ds=`${y}-${String(mo+1).padStart(2,'0')}-${String(dd).padStart(2,'0')}`;
     const es=byDay[ds]||[];
     if(!es.length){cells+=`<div class="cal-cell ${ds===tstr?'today':''}"><span class="dnum">${dd}</span></div>`;continue}
-    const ph=photosOf(es[0].id)[0];
+    const ph=coverOf(es[0]);
     cells+=`<div class="cal-cell has ${ph?'':'nopic'} ${ds===tstr?'today':''}" onclick="calTap('${ds}')">
       ${ph?`<img src="${ph.thumb}">`:''}<span class="dnum">${dd}</span></div>`;
   }
@@ -609,7 +627,7 @@ function calendarView(){
 }
 function calNav(n){S.cal=new Date(S.cal.getFullYear(),S.cal.getMonth()+n,1);render()}
 function calTap(ds){
-  const es=S.dates.filter(d=>d.day===ds);
+  const es=liveDates().filter(d=>d.day===ds);
   if(es.length===1)return openDate(es[0].id);
   openOverlay(`<div class="sheet-head"><button class="hbtn subtle" onclick="closeTop()">✕</button><h2>${fmtDay(ds)}</h2><span></span></div>
    <div class="sheet-body">${es.map(d=>`<div class="card mem-card" onclick="closeTop();openDate('${d.id}')"><div class="mem-title">${esc(d.title)}</div></div>`).join('')}</div>`);
@@ -645,7 +663,7 @@ function saveDate(id){
 let curDateId=null;
 function openDate(id){
   const d=S.dates.find(x=>x.id===id);if(!d)return;
-  curDateId=id;
+  curDateId=id;arrangeMode=false;
   const idea=d.ideaId?S.ideas.find(i=>i.id===d.ideaId):null;
   const locs=d.locs||[];
   openOverlay(`
@@ -655,8 +673,7 @@ function openDate(id){
      ${idea?`<div style="margin-top:6px"><span class="chip" onclick="openIdea('${idea.id}')">💡 ${esc(idea.title)}</span></div>`:''}
      ${locs.length?`<div class="section-title">${locs.length>1?'Our route that day':'Where'}</div><div id="datemap" class="map"></div>${extMapLinks(locs)}
        <div class="loc-list" style="margin-top:8px">${locs.map((l,ix)=>`<div class="loc-row">${locs.length>1?`<span class="n">${ix+1}</span>`:'📍'}<span class="grow">${esc(l.name)}</span></div>`).join('')}</div>`:''}
-     <div class="section-title">Photos from the day</div>
-     <div id="pgrid" class="photo-grid">${photoGridHTML(id)}</div>
+     <div id="psec">${photoSectionHTML(id)}</div>
      <div class="section-title">Our thoughts</div>
      ${noteBoxes('date',id,d.refl)}
      <button class="btn danger" onclick="delDate('${id}')">Delete this memory</button>
@@ -668,25 +685,68 @@ function openDate(id){
     fit(m,pts);
   },30);
 }
-async function delDate(id){
-  if(!confirm('Delete this memory and its photos?'))return;
+// deleting is two-person: one of you moves it to the trash, the other confirms (or
+// either restores). Guards accidental taps through the confirm dialog.
+function delDate(id){
+  if(!confirm(`Move this memory to the trash? Either of you can restore it from the bottom of the Journal — it's only deleted forever once ${pname(otherOf(S.me))} confirms.`))return;
+  db.collection('dates').doc(id).set({trash:{by:S.me,at:Date.now()}},{merge:true}).then(()=>{curDateId=null;closeAll();toast('Moved to trash')});
+}
+function restoreDate(id){
+  db.collection('dates').doc(id).set({trash:null},{merge:true}).then(()=>toast('Restored ✓'));
+}
+async function hardDeleteDate(id){
+  const d=S.dates.find(x=>x.id===id);if(!d||!d.trash)return;
+  if(d.trash.by===S.me)return toast(`${pname(otherOf(S.me))} has to confirm this one`);
+  if(!confirm('Delete forever? This removes the memory and its photos for both of you.'))return;
   toast('Deleting…',6000);
   for(const p of photosOf(id)){
     await db.collection('photos').doc(p.id).delete();
     if(p.fullId)await db.collection('photoFulls').doc(p.fullId).delete();
   }
   await db.collection('dates').doc(id).delete();
-  curDateId=null;closeAll();toast('Deleted');
+  toast('Deleted forever');
 }
 
 // ══════════ photos ══════════
+let arrangeMode=false;
+function coverOf(d){const ph=photosOf(d.id);return ph.find(p=>p.id===d.coverId)||ph[0]}
+function photoSectionHTML(dateId){
+  const ph=photosOf(dateId);
+  return `<div class="section-title">Photos from the day ${ph.length>1?`<button class="arrange-btn" onclick="toggleArrange()">${arrangeMode?'Done':'Arrange'}</button>`:''}</div>
+   ${arrangeMode?`<p class="hint" style="margin:0 0 6px">‹ › to reorder · ★ picks the calendar cover</p>`:''}
+   <div id="pgrid" class="photo-grid">${photoGridHTML(dateId)}</div>`;
+}
 function photoGridHTML(dateId){
-  return photosOf(dateId).map((p,ix)=>`<img src="${p.thumb}" onclick="openViewer('${dateId}',${ix})">`).join('')
+  const ph=photosOf(dateId),d=S.dates.find(x=>x.id===dateId);
+  if(arrangeMode)return ph.map((p,ix)=>{
+    const isCover=d&&(d.coverId?d.coverId===p.id:ix===0);
+    return `<div class="arr-cell"><img src="${p.thumb}">
+      ${isCover?'<span class="cov-badge">★ cover</span>':''}
+      <div class="arr-bar"><button onclick="movePhoto('${dateId}',${ix},-1)" ${ix===0?'disabled':''}>‹</button><button class="${isCover?'on':''}" onclick="setCover('${dateId}','${p.id}')">★</button><button onclick="movePhoto('${dateId}',${ix},1)" ${ix===ph.length-1?'disabled':''}>›</button></div></div>`;
+  }).join('');
+  return ph.map((p,ix)=>`<img src="${p.thumb}" onclick="openViewer('${dateId}',${ix})">`).join('')
    +`<div class="add-photo" onclick="pickPhotos('${dateId}')"><span class="plus">＋</span>Add photos</div>`;
 }
 function refreshPhotoGrid(){
   if(!curDateId)return;
-  const el=$('pgrid');if(el)el.innerHTML=photoGridHTML(curDateId);
+  const el=$('psec');if(el)el.innerHTML=photoSectionHTML(curDateId);
+}
+function toggleArrange(){arrangeMode=!arrangeMode;refreshPhotoGrid()}
+function movePhoto(dateId,ix,n){
+  const ph=photosOf(dateId);
+  const t=ph.splice(ix,1)[0];ph.splice(ix+n,0,t);
+  const batch=db.batch();
+  ph.forEach((p,i)=>{p.order=i;batch.set(db.collection('photos').doc(p.id),{order:i},{merge:true})});
+  refreshPhotoGrid();
+  batch.commit();
+}
+function setCover(dateId,pid){
+  const d=S.dates.find(x=>x.id===dateId);if(!d)return;
+  const next=d.coverId===pid?null:pid; // tapping the current cover clears back to default
+  d.coverId=next;
+  db.collection('dates').doc(dateId).set({coverId:next},{merge:true});
+  refreshPhotoGrid();
+  toast(next?'Cover photo set ★':'Back to the first photo as cover');
 }
 let photoTarget=null;
 function pickPhotos(dateId){photoTarget=dateId;const inp=$('photoInput');inp.value='';inp.click()}
@@ -757,7 +817,7 @@ function drawBigMap(){
   }});
   // one pin per unique memory location; its popup flashes back to the entry (or a list)
   bigMemGroups={};
-  if(bigShow.mems)S.dates.forEach(d=>(d.locs||[]).forEach(l=>{
+  if(bigShow.mems)liveDates().forEach(d=>(d.locs||[]).forEach(l=>{
     const key=l.lat+','+l.lng;
     const g=bigMemGroups[key]=bigMemGroups[key]||{name:l.name,lat:l.lat,lng:l.lng,ids:[]};
     if(!g.ids.includes(d.id))g.ids.push(d.id);
