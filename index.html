@@ -182,6 +182,7 @@ hr{border:none;border-top:1px solid var(--line);margin:18px 0}
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
 <script>
 /* ═══════════════════════════════════════════════════════════════
    STEP 1 — PASTE YOUR FIREBASE CONFIG BELOW
@@ -201,7 +202,7 @@ const firebaseConfig = {
 // ══════════ state & helpers ══════════
 const CATS=['Food & drink','Outdoors','Arts & culture','At home','Adventure','Day trip','Other'];
 let db=null;
-const S={ready:false,cfgOk:false,settings:null,ideas:[],dates:[],photos:[],
+const S={ready:false,cfgOk:false,authKnown:false,user:null,settings:null,ideas:[],dates:[],photos:[],
   me:localStorage.getItem('dj_me')||null,
   tab:'ideas',ideaFilter:'all',journalMode:'album',
   cal:(()=>{const d=new Date();return new Date(d.getFullYear(),d.getMonth(),1)})()};
@@ -221,6 +222,11 @@ function boot(){
   if(!S.cfgOk){render();return}
   firebase.initializeApp(firebaseConfig);
   db=firebase.firestore();
+  firebase.auth().onAuthStateChanged(u=>{S.authKnown=true;S.user=u;if(u)subscribe();render()});
+}
+let subbed=false;
+function subscribe(){
+  if(subbed)return;subbed=true;
   db.collection('meta').doc('settings').onSnapshot(d=>{S.settings=d.exists?d.data():null;S.ready=true;render()},
     e=>{console.error(e);S.ready=true;render();toast('Database error — check your Firestore rules',4000)});
   db.collection('ideas').onSnapshot(q=>{S.ideas=q.docs.map(d=>({id:d.id,...d.data()}));S.ideas.sort((a,b)=>(b.created||0)-(a.created||0));render()});
@@ -234,8 +240,15 @@ function render(){
   const fo=document.activeElement;
   if(fo&&app.contains(fo)&&/INPUT|TEXTAREA|SELECT/.test(fo.tagName))return;
   if(!S.cfgOk){tb.hidden=true;fab.hidden=true;app.innerHTML=configHelp();return}
+  if(!S.authKnown){app.innerHTML='<div class="hero"><div class="big">💌</div><p>Loading…</p></div>';return}
+  if(!S.user){tb.hidden=true;fab.hidden=true;app.innerHTML=loginScreen();return}
   if(!S.ready){app.innerHTML='<div class="hero"><div class="big">💌</div><p>Loading…</p></div>';return}
   if(!S.settings){tb.hidden=true;fab.hidden=true;app.innerHTML=setupScreen();return}
+  // identity follows the login when partner emails are set
+  S.meLocked=false;
+  {const em=(S.user.email||'').toLowerCase();
+   const a=((S.settings.A||{}).email||'').toLowerCase(),b=((S.settings.B||{}).email||'').toLowerCase();
+   if(em&&em===a){S.me='A';S.meLocked=true}else if(em&&em===b){S.me='B';S.meLocked=true}}
   if(!S.me){tb.hidden=true;fab.hidden=true;app.innerHTML=whoAmI();return}
   tb.hidden=false;
   ['ideas','journal','map','settings'].forEach(t=>$('tab-'+t).classList.toggle('on',S.tab===t));
@@ -660,25 +673,35 @@ function settingsView(){
   return `<h1 class="screen-title">Settings</h1><p class="screen-sub">You two, your homes, your data</p>
    <div class="card"><div class="section-title" style="margin-top:0">Names</div>
      <label><span class="dotA"></span> Partner 1</label><input id="s-nameA" value="${esc(st.A?st.A.name:'')}" onblur="saveNames()">
+     <label>Partner 1's sign-in email</label><input id="s-emailA" type="email" value="${esc((st.A&&st.A.email)||'')}" onblur="saveNames()">
      <label><span class="dotB"></span> Partner 2</label><input id="s-nameB" value="${esc(st.B?st.B.name:'')}" onblur="saveNames()">
+     <label>Partner 2's sign-in email</label><input id="s-emailB" type="email" value="${esc((st.B&&st.B.email)||'')}" onblur="saveNames()">
    </div>
-   <div class="card"><div class="section-title" style="margin-top:0">Who's using this phone?</div>
+   ${S.meLocked?`<div class="card"><div class="section-title" style="margin-top:0">Who's using this phone?</div>
+     <p class="hint" style="margin-top:0"><span class="dot${S.me}"></span> You're <b>${esc(pname(S.me))}</b> — matched from your login (${esc(S.user.email||'')}), so no accidental identity switching.</p></div>`
+   :`<div class="card"><div class="section-title" style="margin-top:0">Who's using this phone?</div>
      <div class="row2">
        <button class="whoami-btn" style="margin-bottom:0;${S.me==='A'?'border-color:var(--rose)':''}" onclick="setMe('A')"><span class="dotA"></span>${esc(pname('A'))}</button>
        <button class="whoami-btn" style="margin-bottom:0;${S.me==='B'?'border-color:var(--teal)':''}" onclick="setMe('B')"><span class="dotB"></span>${esc(pname('B'))}</button>
-     </div></div>
+     </div></div>`}
    <div class="card"><div class="section-title" style="margin-top:0">Home base 🏠</div>
      <p class="hint" style="margin-top:0">Set each apartment so every map shows how far a date is from home.</p>
      ${['A','B'].map((k,ix)=>{const h=homes[ix];return `<label>${esc(pname(k))}'s place</label>
        <div class="loc-row">${h&&h.lat!=null?`<span class="grow">📍 ${esc(h.label)}</span>`:`<span class="grow" style="color:var(--muted)">Not set yet</span>`}<button class="x" style="color:var(--rose-dark);font-size:14px;font-weight:700" onclick="pickHome(${ix})">${h&&h.lat!=null?'Change':'Set'}</button></div>`}).join('')}
    </div>
+   <div class="card"><div class="section-title" style="margin-top:0">Account</div>
+     <p class="hint" style="margin-top:0">Signed in as ${esc(S.user.email||'')}.</p>
+     <button class="btn small ghost" onclick="signOut()">Sign out</button></div>
    <div class="card"><div class="section-title" style="margin-top:0">Backup</div>
      <p class="hint" style="margin-top:0">Downloads everything — ideas, memories, notes, and photos — as one JSON file. Do it once in a while!</p>
      <button class="btn small" onclick="backup()">Download backup</button></div>`;
 }
 function saveNames(){
   const a=$('s-nameA'),b=$('s-nameB');if(!a||!b)return;
-  db.collection('meta').doc('settings').set({A:{name:a.value.trim()||'Partner 1'},B:{name:b.value.trim()||'Partner 2'}},{merge:true}).then(()=>toast('Saved ✓'));
+  db.collection('meta').doc('settings').set({
+    A:{name:a.value.trim()||'Partner 1',email:($('s-emailA')?$('s-emailA').value.trim().toLowerCase():'')},
+    B:{name:b.value.trim()||'Partner 2',email:($('s-emailB')?$('s-emailB').value.trim().toLowerCase():'')}
+  },{merge:true}).then(()=>toast('Saved ✓'));
 }
 function setMe(k){S.me=k;localStorage.setItem('dj_me',k);render();toast(`Hi, ${pname(k)}! 💛`)}
 function pickHome(ix){
@@ -707,15 +730,33 @@ async function backup(){
   toast('Backup downloaded ✓');
 }
 
+// ══════════ shared login ══════════
+function loginScreen(){return `<div class="hero"><div class="big">💌</div><h1>Our Dates</h1><p>Just us two. Sign in with your login.</p></div>
+ <div class="card"><label>Email</label><input id="li-email" type="email" autocomplete="username" placeholder="your sign-in email">
+ <label>Password</label><input id="li-pass" type="password" autocomplete="current-password" onkeydown="if(event.key==='Enter')doLogin()">
+ <button class="btn" onclick="doLogin()">Unlock 💘</button>
+ <div class="hint" id="li-err" style="margin-top:10px;text-align:center"></div></div>`}
+async function doLogin(){
+  const e=$('li-email').value.trim(),p=$('li-pass').value;
+  if(!e||!p)return toast('Email and password, please');
+  $('li-err').textContent='';toast('Signing in…',10000);
+  try{await firebase.auth().signInWithEmailAndPassword(e,p);toast('Welcome back 💛')}
+  catch(err){console.error(err);$('li-err').textContent='That didn’t work — double-check your email & password.';toast('Sign-in failed',2000)}
+}
+function signOut(){firebase.auth().signOut().then(()=>location.reload())}
+
 // ══════════ first-run screens ══════════
 function setupScreen(){return `<div class="hero"><div class="big">💌</div><h1>Our Dates</h1><p>A little home for your date ideas, memories, photos, and the map of it all.</p></div>
  <div class="card"><label>Partner 1's name</label><input id="su-a" placeholder="e.g. Mr. Soccerboy">
+ <label>Partner 1's sign-in email</label><input id="su-ae" type="email" value="${esc((S.user&&S.user.email)||'')}">
  <label>Partner 2's name</label><input id="su-b" placeholder="e.g. Ms. Chairgirl">
+ <label>Partner 2's sign-in email</label><input id="su-be" type="email" placeholder="their Firebase login email">
+ <div class="hint">With each email filled in, the app knows who's who from the login itself — no picking, no accidental switching.</div>
  <button class="btn" onclick="finishSetup()">Let's go 💘</button></div>`}
 function finishSetup(){
   const a=$('su-a').value.trim(),b=$('su-b').value.trim();
   if(!a||!b)return toast('Both names, please 💛');
-  db.collection('meta').doc('settings').set({A:{name:a},B:{name:b},homes:[]});
+  db.collection('meta').doc('settings').set({A:{name:a,email:$('su-ae').value.trim().toLowerCase()},B:{name:b,email:$('su-be').value.trim().toLowerCase()},homes:[]});
 }
 function whoAmI(){return `<div class="hero"><div class="big">👋</div><h1>Who are you?</h1><p>So your notes are saved under the right name. You can switch any time in Settings.</p></div>
  <button class="whoami-btn" onclick="setMe('A')"><span class="dotA"></span>${esc(pname('A'))}</button>
