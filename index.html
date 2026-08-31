@@ -140,8 +140,8 @@ label{display:block;font-size:13px;font-weight:700;color:var(--plum);margin:14px
 .cov-badge{position:absolute;top:4px;left:4px;background:var(--gold);color:#fff;font-size:10px;font-weight:800;padding:1px 7px;border-radius:99px}
 .arrange-btn{font-size:12.5px;font-weight:800;color:var(--rose-dark)}
 #viewer{position:fixed;inset:0;background:rgba(20,10,14,.96);z-index:700;display:flex;flex-direction:column}
-#viewer .v-img{flex:1;display:flex;align-items:center;justify-content:center;min-height:0}
-#viewer img{max-width:100%;max-height:100%;object-fit:contain}
+#viewer .v-img{flex:1;display:flex;align-items:center;justify-content:center;min-height:0;touch-action:none;overflow:hidden}
+#viewer img{max-width:100%;max-height:100%;object-fit:contain;will-change:transform}
 #viewer .v-bar{display:flex;justify-content:space-between;align-items:center;padding:12px 18px calc(14px + var(--safe-b));color:#fff}
 #viewer .v-bar button{font-size:15px;font-weight:700;color:#fff;padding:8px 14px}
 #viewer .v-close{position:absolute;top:14px;right:14px;color:#fff;font-size:26px;padding:8px;z-index:2}
@@ -780,7 +780,89 @@ function openViewer(dateId,ix){
    <div class="v-bar"><button onclick="vNav(-1)">‹ Prev</button><button id="v-count" style="font-weight:400;color:#ccb"></button><button onclick="vNav(1)">Next ›</button></div>
    <div style="text-align:center;padding-bottom:calc(12px + var(--safe-b))"><button style="color:#e8909a;font-size:13px" onclick="vDelete()">Delete this photo</button></div>`;
   document.body.appendChild(el);
+  const box=el.querySelector('.v-img');
+  box.addEventListener('pointerdown',vPtrDown);
+  box.addEventListener('pointermove',vPtrMove);
+  box.addEventListener('pointerup',vPtrUp);
+  box.addEventListener('pointercancel',vPtrUp);
+  box.addEventListener('wheel',vWheel,{passive:false});
+  vResetZoom();
   vShow();
+}
+
+// pinch to zoom / drag to pan / double-tap, in raw pointer events.
+// transform-origin is the box center: a screen point p maps to p*scale + t.
+let Z=null;
+function vResetZoom(animate){Z={scale:1,tx:0,ty:0,ptrs:new Map(),start:null,pinch:null,lastTap:0};vApplyZoom(animate)}
+function vApplyZoom(animate){
+  const img=$('v-img');if(!img)return;
+  img.style.transition=animate?'transform .18s':'none';
+  img.style.transform=`translate(${Z.tx}px,${Z.ty}px) scale(${Z.scale})`;
+}
+function vClamp(){
+  const box=document.querySelector('#viewer .v-img');if(!box)return;
+  const mx=(Z.scale-1)*box.clientWidth/2,my=(Z.scale-1)*box.clientHeight/2;
+  Z.tx=Math.max(-mx,Math.min(mx,Z.tx));Z.ty=Math.max(-my,Math.min(my,Z.ty));
+}
+function vMid(box){ // pinch midpoint relative to box center
+  const r=box.getBoundingClientRect(),[a,b]=[...Z.ptrs.values()];
+  return {x:(a.x+b.x)/2-r.left-r.width/2,y:(a.y+b.y)/2-r.top-r.height/2};
+}
+function vSetScale(s,m){ // rescale keeping point m (box-center coords) stationary
+  s=Math.min(5,Math.max(1,s));
+  Z.tx=m.x-(m.x-Z.tx)*(s/Z.scale);Z.ty=m.y-(m.y-Z.ty)*(s/Z.scale);
+  Z.scale=s;if(s===1){Z.tx=0;Z.ty=0}
+  vClamp();
+}
+function vPtrDown(e){
+  e.preventDefault();
+  try{e.currentTarget.setPointerCapture(e.pointerId)}catch(err){}
+  Z.ptrs.set(e.pointerId,{x:e.clientX,y:e.clientY});
+  if(Z.ptrs.size===1){
+    Z.start={tx:Z.tx,ty:Z.ty,x:e.clientX,y:e.clientY};
+    Z.gest={x:e.clientX,y:e.clientY,t:Date.now(),multi:false,moved:false};
+    // double-tap only pairs with a previous *clean* tap (recorded on pointerup)
+    if(Date.now()-Z.lastTap<300&&Math.hypot(e.clientX-Z.tapX,e.clientY-Z.tapY)<40){
+      const box=e.currentTarget,r=box.getBoundingClientRect();
+      if(Z.scale>1)vResetZoom(true);
+      else{vSetScale(2.5,{x:e.clientX-r.left-r.width/2,y:e.clientY-r.top-r.height/2});vApplyZoom(true)}
+      Z.lastTap=0;Z.start=null;Z.gest=null;
+    }
+  }else if(Z.ptrs.size===2){
+    const [a,b]=[...Z.ptrs.values()];
+    Z.pinch={dist:Math.hypot(a.x-b.x,a.y-b.y),scale:Z.scale};Z.start=null;
+    if(Z.gest)Z.gest.multi=true;
+  }
+}
+function vPtrMove(e){
+  if(!Z.ptrs.has(e.pointerId))return;
+  Z.ptrs.set(e.pointerId,{x:e.clientX,y:e.clientY});
+  if(Z.gest&&Math.hypot(e.clientX-Z.gest.x,e.clientY-Z.gest.y)>8)Z.gest.moved=true;
+  if(Z.ptrs.size===2&&Z.pinch){
+    const [a,b]=[...Z.ptrs.values()];
+    vSetScale(Z.pinch.scale*Math.hypot(a.x-b.x,a.y-b.y)/Z.pinch.dist,vMid(e.currentTarget));
+    vApplyZoom(false);
+  }else if(Z.ptrs.size===1&&Z.start&&Z.scale>1){
+    Z.tx=Z.start.tx+(e.clientX-Z.start.x);Z.ty=Z.start.ty+(e.clientY-Z.start.y);
+    vClamp();vApplyZoom(false);
+  }
+}
+function vPtrUp(e){
+  Z.ptrs.delete(e.pointerId);
+  Z.pinch=null;
+  if(Z.ptrs.size===1){const p=[...Z.ptrs.values()][0];Z.start={tx:Z.tx,ty:Z.ty,x:p.x,y:p.y}}
+  else Z.start=null;
+  if(!Z.ptrs.size){
+    if(Z.gest&&!Z.gest.multi&&!Z.gest.moved&&Date.now()-Z.gest.t<250){Z.lastTap=Date.now();Z.tapX=Z.gest.x;Z.tapY=Z.gest.y}
+    Z.gest=null;
+    if(Z.scale<1.05&&Z.scale!==1)vResetZoom(true); // snap back from a near-1x pinch
+  }
+}
+function vWheel(e){
+  e.preventDefault();
+  const box=e.currentTarget,r=box.getBoundingClientRect();
+  vSetScale(Z.scale*(e.deltaY<0?1.15:0.87),{x:e.clientX-r.left-r.width/2,y:e.clientY-r.top-r.height/2});
+  vApplyZoom(false);
 }
 async function vShow(){
   const p=V.list[V.ix];
@@ -789,7 +871,7 @@ async function vShow(){
   if(!p._full){try{const d=await db.collection('photoFulls').doc(p.fullId).get();p._full=(d.data()||{}).data}catch(e){}}
   if(V&&p._full&&V.list[V.ix]===p)$('v-img').src=p._full;
 }
-function vNav(n){if(!V)return;V.ix=(V.ix+n+V.list.length)%V.list.length;vShow()}
+function vNav(n){if(!V)return;V.ix=(V.ix+n+V.list.length)%V.list.length;vResetZoom();vShow()}
 function closeViewer(){const el=$('viewer');if(el)el.remove();V=null}
 async function vDelete(){
   if(!V||!confirm('Delete this photo?'))return;
