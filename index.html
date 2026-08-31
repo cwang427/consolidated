@@ -83,6 +83,9 @@ label{display:block;font-size:13px;font-weight:700;color:var(--plum);margin:14px
 .num-pin{width:26px;height:26px;border-radius:50%;background:var(--rose);border:2px solid #fff;color:#fff;font-size:13px;font-weight:800;display:flex;align-items:center;justify-content:center;box-shadow:var(--shadow);transform:translate(-50%,-50%)}
 .idea-pin{width:18px;height:18px;border-radius:50% 50% 50% 0;background:var(--rose);border:2px solid #fff;transform:rotate(-45deg) translate(-70%,-10%);box-shadow:var(--shadow)}
 .mem-pin{width:16px;height:16px;border-radius:50%;background:var(--plum);border:2px solid #fff;transform:translate(-50%,-50%);box-shadow:var(--shadow)}
+.maplinks{display:flex;gap:8px;margin-top:8px}
+.maplinks a{flex:1;text-align:center;font-size:13px;font-weight:700;color:var(--plum);background:#f1e9df;border-radius:10px;padding:8px 4px;text-decoration:none;white-space:nowrap}
+.maplinks a:active{background:var(--rose-soft)}
 
 /* ---- notes / reflections ---- */
 .note-box{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:12px;margin-bottom:10px}
@@ -309,6 +312,22 @@ function addNumPin(m,l,ix,total){
   const html=`<div class="num-pin">${(!total||total<=1)?'':ix+1}</div>`;
   L.marker([l.lat,l.lng],{icon:L.divIcon({className:'',html,iconSize:[0,0]})}).addTo(m).bindPopup(esc(l.name));
 }
+// "Open in Apple/Google Maps" links. One stop → a pin, zoomed in; 2+ stops → directions
+// through every stop in order. (External map URLs can't carry extra pins, so the home
+// bases only show on the in-app maps.)
+const ll=l=>`${l.lat},${l.lng}`;
+function extMapLinks(locs){
+  if(!locs||!locs.length)return'';
+  let a,g;
+  if(locs.length===1){
+    a=`https://maps.apple.com/?ll=${ll(locs[0])}&q=${encodeURIComponent(locs[0].name||'Pin')}`;
+    g=`https://www.google.com/maps/search/?api=1&query=${ll(locs[0])}`;
+  }else{
+    a=`https://maps.apple.com/?saddr=${ll(locs[0])}&daddr=${locs.slice(1).map(ll).join('+to:')}`;
+    g=`https://www.google.com/maps/dir/?api=1&origin=${ll(locs[0])}&destination=${ll(locs[locs.length-1])}${locs.length>2?`&waypoints=${locs.slice(1,-1).map(ll).join('|')}`:''}`;
+  }
+  return `<div class="maplinks"><a href="${a}" target="_blank" rel="noopener"> Apple Maps</a><a href="${g}" target="_blank" rel="noopener">🗺️ Google Maps</a></div>`;
+}
 
 // ══════════ notes (shared by ideas & memories) ══════════
 function noteBoxes(kind,id,notes){
@@ -403,7 +422,7 @@ function openIdea(id){
    <div class="sheet-body">
      ${i.category?`<span class="chip plain">${esc(i.category)}</span>`:''}
      ${i.desc?`<p style="margin:10px 0 4px;white-space:pre-wrap">${esc(i.desc)}</p>`:''}
-     ${i.loc?`<div class="section-title">📍 ${esc(i.loc.name)}</div><div id="ideamap" class="map"></div>`:''}
+     ${i.loc?`<div class="section-title">📍 ${esc(i.loc.name)}</div><div id="ideamap" class="map"></div>${extMapLinks([i.loc])}`:''}
      <div class="section-title">Notes</div>
      ${noteBoxes('idea',id,i.notes)}
      ${done.length?`<div class="section-title">In the journal</div>`+done.map(d=>`<div class="card mem-card" onclick="openDate('${d.id}')"><span class="mem-day">${fmtDay(d.day)}</span><div class="mem-title">${esc(d.title)}</div></div>`).join(''):''}
@@ -442,6 +461,7 @@ function saveIdea(id){
 // ══════════ location picker ══════════
 let pickMap=null;
 function locPickerHTML(){return `<div id="locwrap" class="loc-list"></div>
+ ${F&&F.showAddr?'<div id="loc-addr" class="hint" style="margin:0 0 8px" hidden></div>':''}
  <div class="searchrow"><input id="loc-q" placeholder="Search a place or address" onkeydown="if(event.key==='Enter'){event.preventDefault();locSearch()}"><button onclick="locSearch()">Search</button></div>
  <div id="loc-results" class="results"></div>
  <div class="hint">Search above, or tap the map to drop a pin.</div>
@@ -461,6 +481,28 @@ function drawLocPicker(){
       addLoc({name:name||'Pinned spot',lat:+e.latlng.lat.toFixed(6),lng:+e.latlng.lng.toFixed(6)});
     });
   },30);
+  updateLocAddr();
+}
+const addrCache={};
+async function updateLocAddr(){
+  const el=$('loc-addr');if(!el)return;
+  const l=F.locs[0];
+  if(!l){el.hidden=true;return}
+  const key=l.lat+','+l.lng;
+  el.hidden=false;
+  if(!(key in addrCache)){
+    el.textContent='Looking up address…';
+    try{
+      const r=await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${l.lat}&lon=${l.lng}`);
+      const js=await r.json(),a=js.address||{};
+      const street=[a.house_number,a.road].filter(Boolean).join(' ');
+      const city=a.city||a.town||a.village||a.hamlet||a.county||'';
+      addrCache[key]=[street,city,[a.state,a.postcode].filter(Boolean).join(' ')].filter(Boolean).join(', ')||js.display_name||'';
+    }catch(e){addrCache[key]=''}
+  }
+  const cur=F&&F.locs[0],el2=$('loc-addr');
+  if(!el2||!cur||cur.lat+','+cur.lng!==key)return; // sheet closed or pin moved mid-lookup
+  el2.textContent=addrCache[key]?'📮 '+addrCache[key]:'Address unavailable for this spot';
 }
 function rmLoc(ix){F.locs.splice(ix,1);drawLocPicker()}
 function addLoc(l){
@@ -571,7 +613,7 @@ function openDate(id){
    <div class="sheet-body">
      <span class="mem-day">${fmtDay(d.day)}${d.time?' · '+fmtTime(d.time):''}</span>
      ${idea?`<div style="margin-top:6px"><span class="chip" onclick="openIdea('${idea.id}')">💡 ${esc(idea.title)}</span></div>`:''}
-     ${locs.length?`<div class="section-title">${locs.length>1?'Our route that day':'Where'}</div><div id="datemap" class="map"></div>
+     ${locs.length?`<div class="section-title">${locs.length>1?'Our route that day':'Where'}</div><div id="datemap" class="map"></div>${extMapLinks(locs)}
        <div class="loc-list" style="margin-top:8px">${locs.map((l,ix)=>`<div class="loc-row">${locs.length>1?`<span class="n">${ix+1}</span>`:'📍'}<span class="grow">${esc(l.name)}</span></div>`).join('')}</div>`:''}
      <div class="section-title">Photos from the day</div>
      <div id="pgrid" class="photo-grid">${photoGridHTML(id)}</div>
@@ -660,8 +702,14 @@ async function vDelete(){
 // ══════════ big map ══════════
 let bigMap=null,bigShow={ideas:true,mems:true};
 function mapView(){return `<h1 class="screen-title">Our map</h1><p class="screen-sub">Where we've been & where we're going</p>
- <div class="filters"><button class="${bigShow.ideas?'on':''}" onclick="bigShow.ideas=!bigShow.ideas;render()">💡 Ideas</button><button class="${bigShow.mems?'on':''}" onclick="bigShow.mems=!bigShow.mems;render()">📖 Memories</button></div>
+ <div class="filters"><button class="${bigShow.ideas?'on':''}" onclick="bigShow.ideas=!bigShow.ideas;render()">💡 Ideas</button><button class="${bigShow.mems?'on':''}" onclick="bigShow.mems=!bigShow.mems;render()">📖 Memories</button><button onclick="openBigMapExt('a')"> Apple Maps</button><button onclick="openBigMapExt('g')">🗺️ Google Maps</button></div>
  <div id="bigmap" class="map tall"></div>`}
+function openBigMapExt(which){
+  if(!bigMap)return;
+  const c=bigMap.getCenter(),z=Math.round(bigMap.getZoom());
+  const lat=c.lat.toFixed(5),lng=c.lng.toFixed(5);
+  window.open(which==='a'?`https://maps.apple.com/?ll=${lat},${lng}&z=${z}`:`https://www.google.com/maps/@${lat},${lng},${z}z`,'_blank','noopener');
+}
 function drawBigMap(){
   const el=$('bigmap');if(!el)return;
   if(bigMap){try{bigMap.remove()}catch(e){}bigMap=null}
@@ -683,18 +731,12 @@ function drawBigMap(){
 // ══════════ settings ══════════
 function settingsView(){
   const st=S.settings,homes=st.homes||[];
+  const myIx=S.me==='A'?0:1;
   return `<h1 class="screen-title">Settings</h1>
-   ${S.meLocked?`<div class="card"><div class="section-title" style="margin-top:0">Who's using this phone?</div>
-     <p class="hint" style="margin-top:0"><span class="dot${S.me}"></span> You're <b>${esc(pname(S.me))}</b> — matched from your login (${esc(S.user.email||'')}), so no accidental identity switching.</p></div>`
-   :`<div class="card"><div class="section-title" style="margin-top:0">Who's using this phone?</div>
-     <div class="row2">
-       <button class="whoami-btn" style="margin-bottom:0;${S.me==='A'?'border-color:var(--rose)':''}" onclick="setMe('A')"><span class="dotA"></span>${esc(pname('A'))}</button>
-       <button class="whoami-btn" style="margin-bottom:0;${S.me==='B'?'border-color:var(--teal)':''}" onclick="setMe('B')"><span class="dotB"></span>${esc(pname('B'))}</button>
-     </div></div>`}
    <div class="card"><div class="section-title" style="margin-top:0">Home base 🏠</div>
-     <p class="hint" style="margin-top:0">Set each apartment so every map shows how far a date is from home.</p>
-     ${['A','B'].map((k,ix)=>{const h=homes[ix];return `<label>${esc(pname(k))}'s place</label>
-       <div class="loc-row">${h&&h.lat!=null?`<span class="grow">📍 ${esc(h.label)}</span>`:`<span class="grow" style="color:var(--muted)">Not set yet</span>`}<button class="x" style="color:var(--rose-dark);font-size:14px;font-weight:700" onclick="pickHome(${ix})">${h&&h.lat!=null?'Change':'Set'}</button></div>`}).join('')}
+     <p class="hint" style="margin-top:0">Set your home location to display on maps.</p>
+     ${['A','B'].map((k,ix)=>{const h=homes[ix],mine=ix===myIx;return `<label>${esc(pname(k))}'s place${mine?' (you)':''}</label>
+       <div class="loc-row">${h&&h.lat!=null?`<span class="grow">📍 ${esc(h.label)}</span>`:`<span class="grow" style="color:var(--muted)">Not set yet</span>`}${mine?`<button class="x" style="color:var(--rose-dark);font-size:14px;font-weight:700" onclick="pickHome(${ix})">${h&&h.lat!=null?'Change':'Set'}</button>`:''}</div>`}).join('')}
    </div>
    <div class="card"><div class="section-title" style="margin-top:0">Account</div>
      <p class="hint" style="margin-top:0">Signed in as ${esc(S.user.email||'')}.</p>
@@ -705,7 +747,8 @@ function settingsView(){
 }
 function setMe(k){S.me=k;localStorage.setItem('dj_me',k);render();toast(`Hi, ${pname(k)}!`)}
 function pickHome(ix){
-  F={locs:[],max:1,homeIx:ix};
+  if(ix!==(S.me==='A'?0:1))return toast('You can only set your own home');
+  F={locs:[],max:1,homeIx:ix,showAddr:true};
   const h=(S.settings.homes||[])[ix];
   if(h&&h.lat!=null)F.locs=[{name:h.label,lat:h.lat,lng:h.lng}];
   openOverlay(`<div class="sheet-head"><button class="hbtn subtle" onclick="closeTop()">Cancel</button><h2>Set home base</h2><button class="hbtn" onclick="saveHome()">Save</button></div>
@@ -746,7 +789,7 @@ async function doLogin(){
 function signOut(){firebase.auth().signOut().then(()=>location.reload())}
 
 // ══════════ first-run screens ══════════
-function whoAmI(){return `<div class="hero"><div class="big">👋</div><h1>Who are you?</h1><p>So your notes are saved under the right name. You can switch any time in Settings.</p></div>
+function whoAmI(){return `<div class="hero"><div class="big">👋</div><h1>Who are you?</h1><p>So your notes are saved under the right name.</p></div>
  <button class="whoami-btn" onclick="setMe('A')"><span class="dotA"></span>${esc(pname('A'))}</button>
  <button class="whoami-btn" onclick="setMe('B')"><span class="dotB"></span>${esc(pname('B'))}</button>`}
 function configHelp(){return `<div class="hero"><div class="big"><span class="calico"><i>JUL</i><b>19</b></span></div><h1>ConsoliDated</h1><p>Almost there — the app just needs its database keys.</p></div>
