@@ -659,10 +659,20 @@ function calendarView(){
       ${ph?`<img src="${ph.thumb}">`:''}<span class="dnum">${dd}</span></div>`;
   }
   const mn=S.cal.toLocaleDateString(undefined,{month:'long',year:'numeric'});
-  return `<div class="cal-head"><button onclick="calNav(-1)">‹</button><h3>${mn}</h3><button onclick="calNav(1)">›</button></div>
+  const ms=memoryMonths(),cur=calKey(),lo=ms[0],hi=ms[ms.length-1];
+  return `<div class="cal-head"><button onclick="calNav(-1)" ${cur>lo?'':'disabled style="opacity:.25"'}>‹</button><h3>${mn}</h3><button onclick="calNav(1)" ${cur<hi?'':'disabled style="opacity:.25"'}>›</button></div>
   <div class="cal-grid">${['S','M','T','W','T','F','S'].map(x=>`<div class="cal-dow">${x}</div>`).join('')}${cells}</div>`;
 }
-function calNav(n){S.cal=new Date(S.cal.getFullYear(),S.cal.getMonth()+n,1);render()}
+// the calendar steps month by month (unlike the album, empty months in between are worth
+// seeing) but stays inside the span of months you actually have memories in
+function calNav(n){
+  const ms=memoryMonths();if(!ms.length)return;
+  const d=new Date(S.cal.getFullYear(),S.cal.getMonth()+n,1);
+  let k=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+  if(k<ms[0])k=ms[0];
+  if(k>ms[ms.length-1])k=ms[ms.length-1];
+  goMonth(k);
+}
 function calTap(ds){
   const es=liveDates().filter(d=>d.day===ds);
   if(es.length===1)return openDate(es[0].id);
