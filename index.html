@@ -263,13 +263,23 @@ function boot(){
   db=firebase.firestore();
   firebase.auth().onAuthStateChanged(async u=>{S.authKnown=true;S.user=u;if(u){await applyIdentity(u);subscribe()}render()});
 }
+// on first load, open the journal on the newest month that has memories (falling back to
+// the oldest) so the album isn't blank when nothing was logged this month
+let calInited=false;
+function initCalMonth(){
+  if(calInited||!S.dates.length)return;
+  calInited=true;
+  const ms=memoryMonths(),cur=calKey();
+  if(!ms.length||ms.includes(cur))return;
+  goMonth(ms.filter(m=>m<=cur).pop()||ms[0]);
+}
 let subbed=false;
 function subscribe(){
   if(subbed)return;subbed=true;
   db.collection('meta').doc('settings').onSnapshot(d=>{S.settings=d.exists?d.data():{};S.ready=true;render()},
     e=>{console.error(e);S.ready=true;render();toast('Database error — check your Firestore rules',4000)});
   db.collection('ideas').onSnapshot(q=>{S.ideas=q.docs.map(d=>({id:d.id,...d.data()}));S.ideas.sort((a,b)=>(b.created||0)-(a.created||0));render()});
-  db.collection('dates').onSnapshot(q=>{S.dates=q.docs.map(d=>({id:d.id,...d.data()}));S.dates.sort((a,b)=>(b.day||'').localeCompare(a.day||'')||(b.created||0)-(a.created||0));render()});
+  db.collection('dates').onSnapshot(q=>{S.dates=q.docs.map(d=>({id:d.id,...d.data()}));S.dates.sort((a,b)=>(b.day||'').localeCompare(a.day||'')||(b.created||0)-(a.created||0));initCalMonth();render()});
   db.collection('photos').onSnapshot(q=>{S.photos=q.docs.map(d=>({id:d.id,...d.data()}));S.photos.sort((a,b)=>(a.created||0)-(b.created||0));render();refreshPhotoGrid()});
 }
 
@@ -579,12 +589,29 @@ async function locSearch(){
   }catch(e){$('loc-results').innerHTML='<div class="hint">Search failed — check your connection.</div>'}
 }
 // ══════════ journal ══════════
+// the album is paged by month, sharing S.cal with the calendar so switching views keeps
+// your place. Its arrows skip straight to the next month that actually has memories, so
+// you never step through empty ones.
+const monthKey=d=>(d.day||'').slice(0,7);
+const calKey=()=>`${S.cal.getFullYear()}-${String(S.cal.getMonth()+1).padStart(2,'0')}`;
+const memoryMonths=()=>[...new Set(liveDates().map(monthKey).filter(Boolean))].sort();
+function goMonth(k){const[y,mo]=k.split('-').map(Number);S.cal=new Date(y,mo-1,1);render();window.scrollTo(0,0)}
+function albumNav(n){
+  const ms=memoryMonths(),cur=calKey();
+  const to=n<0?[...ms].reverse().find(m=>m<cur):ms.find(m=>m>cur);
+  if(to)goMonth(to);
+}
 function journalView(){
   const live=liveDates(),trash=S.dates.filter(d=>d.trash);
   const seg=`<div class="seg"><button class="${S.journalMode==='album'?'on':''}" onclick="S.journalMode='album';render()">📸 Album</button><button class="${S.journalMode==='cal'?'on':''}" onclick="S.journalMode='cal';render()">🗓️ Calendar</button></div>`;
+  const cur=calKey(),ms=memoryMonths();
+  const monthRow=(S.journalMode==='album'&&live.length)?`<div class="cal-head">
+    <button onclick="albumNav(-1)" ${ms.some(m=>m<cur)?'':'disabled style="opacity:.25"'}>‹</button>
+    <h3>${S.cal.toLocaleDateString(undefined,{month:'long',year:'numeric'})}</h3>
+    <button onclick="albumNav(1)" ${ms.some(m=>m>cur)?'':'disabled style="opacity:.25"'}>›</button></div>`:'';
   let body;
   if(!live.length)body=`<div class="empty"><div class="big">📖</div>No memories yet.<br>Tap <b>+</b> to record your first date —<br>past ones count too!</div>`;
-  else if(S.journalMode==='album')body=live.map(d=>{
+  else if(S.journalMode==='album')body=live.filter(d=>monthKey(d)===cur).map(d=>{
     const ph=photosOf(d.id);
     return `<div class="card mem-card" onclick="openDate('${d.id}')">
       <span class="mem-day">${fmtDay(d.day)}${d.time?' · '+fmtTime(d.time):''}</span>
@@ -592,7 +619,7 @@ function journalView(){
       ${(d.locs||[]).length?`<div class="idea-meta">📍 ${(d.locs||[]).map(l=>esc(l.name)).join(' → ')}</div>`:''}
       ${ph.length?`<div class="thumbstrip">${ph.slice(0,8).map(p=>`<img src="${p.thumb}">`).join('')}</div>`:''}
       ${ph.length?`<div class="mem-icons">📷 ${ph.length}</div>`:''}</div>`;
-  }).join('');
+  }).join('')||`<div class="empty">Nothing logged this month.<br>Use ‹ › to browse the months you have memories in.</div>`;
   else body=calendarView();
   const trashSec=(S.journalMode==='album'&&trash.length)?`<div class="section-title">🗑️ Trash</div>`+trash.map(d=>{
     const mine=d.trash.by===S.me;
@@ -601,7 +628,7 @@ function journalView(){
       <button class="btn small ghost" style="margin-top:0" onclick="restoreDate('${d.id}')">Restore</button>
       ${mine?'':`<button class="btn small" style="background:#b3413f;margin-left:8px;margin-top:0" onclick="hardDeleteDate('${d.id}')">Delete forever</button>`}</div>`;
   }).join(''):'';
-  return `<h1 class="screen-title">Our journal</h1><p class="screen-sub">${live.length} memor${live.length===1?'y':'ies'} so far</p>${seg}${body}${trashSec}`;
+  return `<h1 class="screen-title">Our journal</h1><p class="screen-sub">${live.length} memor${live.length===1?'y':'ies'} so far</p>${seg}${monthRow}${body}${trashSec}`;
 }
 function calendarView(){
   const y=S.cal.getFullYear(),mo=S.cal.getMonth();

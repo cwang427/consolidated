@@ -27,6 +27,7 @@ A private two-person date-journal web app: shared date-idea list, journal of log
 - `render()` skips same-screen re-renders while an input inside `#app` is focused (protects typing from snapshot refreshes) but **must never block screen transitions** — that caused a real login-stall bug on iOS (keychain autofill leaves focus in the password field). The `lastScreen` mechanism handles this; don't regress it.
 - `[hidden]{display:none!important}` exists because component CSS uses `display:flex` — removing it re-exposes the FAB/tabbar on the login screen.
 - Emoji/theming: the user wants **minimal love/heart theming**. The calendar mark on hero screens is a custom `.calico` element showing **JUL 19** (a date meaningful to the user — the 📆 emoji hardcodes July 17, don't swap back). Home-screen icon is `apple-touch-icon.png`, a single date fruit (the pun).
+- Journal album is **paged by month**, sharing `S.cal` with the calendar view (so switching views keeps your place). Album arrows (`albumNav`) skip to the next month that *has* memories; the calendar's own arrows (`calNav`) still step month by month. `initCalMonth()` runs once on first data load so the album doesn't open blank. Trash is listed outside the month filter.
 - `SEED` array = one-tap import of the couple's original idea list; shown only while the `ideas` collection is empty.
 
 ## Testing
