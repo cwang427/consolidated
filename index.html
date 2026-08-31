@@ -881,29 +881,11 @@ async function vDelete(){
 // ══════════ big map ══════════
 let bigMap=null,bigShow={ideas:true,mems:true,cat:'all'};
 const mappedIdeas=()=>S.ideas.filter(i=>i.loc);
-const mappedDates=()=>liveDates().filter(d=>(d.locs||[]).length);
-// a memory has no category of its own — it inherits one from the idea it was logged
-// from. Spontaneous dates (and ones whose idea was later deleted) have none, so they
-// get their own bucket rather than vanishing whenever a category is picked.
-const NOCAT='__none';
-function dateCat(d){
-  const i=d.ideaId?S.ideas.find(x=>x.id===d.ideaId):null;
-  return (i&&i.category)||NOCAT;
-}
-const catMatch=c=>bigShow.cat==='all'||(c||NOCAT)===bigShow.cat;
-function mapCats(){
-  const seen=new Set();
-  if(bigShow.ideas)mappedIdeas().forEach(i=>seen.add(i.category||NOCAT));
-  if(bigShow.mems)mappedDates().forEach(d=>seen.add(dateCat(d)));
-  const out=CATS.filter(c=>seen.has(c));
-  if(seen.has(NOCAT))out.push(NOCAT);
-  return out;
-}
 function mapView(){
   // only offer categories that actually have a pin on the map
-  const cats=mapCats();
+  const cats=CATS.filter(c=>mappedIdeas().some(i=>i.category===c));
   if(bigShow.cat!=='all'&&!cats.includes(bigShow.cat))bigShow.cat='all';
-  const catRow=cats.length>1?`<div class="filters">${['all'].concat(cats).map(c=>`<button class="${bigShow.cat===c?'on':''}" data-c="${esc(c)}" onclick="setMapCat(this)">${c==='all'?'All':c===NOCAT?'Spontaneous':esc(c)}</button>`).join('')}</div>`:'';
+  const catRow=(bigShow.ideas&&cats.length>1)?`<div class="filters">${['all'].concat(cats).map(c=>`<button class="${bigShow.cat===c?'on':''}" data-c="${esc(c)}" onclick="setMapCat(this)">${c==='all'?'All ideas':esc(c)}</button>`).join('')}</div>`:'';
   return `<h1 class="screen-title">Our map</h1><p class="screen-sub">Where we've been & where we're going</p>
  <div class="filters"><button class="${bigShow.ideas?'on':''}" onclick="bigShow.ideas=!bigShow.ideas;render()">💡 Ideas</button><button class="${bigShow.mems?'on':''}" onclick="bigShow.mems=!bigShow.mems;render()">📖 Memories</button></div>
  ${catRow}
@@ -916,25 +898,21 @@ function drawBigMap(){
   if(bigMap){try{bigMap.remove()}catch(e){}bigMap=null}
   bigMap=mkMap('bigmap');bigMap.scrollWheelZoom.enable();
   const pts=homeMarkers(bigMap);
-  if(bigShow.ideas)mappedIdeas().forEach(i=>{if(catMatch(i.category)){
+  if(bigShow.ideas)mappedIdeas().forEach(i=>{if(bigShow.cat==='all'||i.category===bigShow.cat){
     L.marker([i.loc.lat,i.loc.lng],{icon:L.divIcon({className:'',html:'<div class="idea-pin"></div>',iconSize:[0,0]})}).addTo(bigMap)
      .bindPopup(`<b>💡 ${esc(i.title)}</b><br>${esc(i.loc.name)}${i.category?`<br><span class="chip plain">${esc(i.category)}</span>`:''}${extMapLinks([i.loc])}`);
     pts.push([i.loc.lat,i.loc.lng]);
   }});
   // one pin per unique memory location; its popup flashes back to the entry (or a list)
   bigMemGroups={};
-  if(bigShow.mems)liveDates().forEach(d=>{
-    if(!catMatch(dateCat(d)))return;
-    (d.locs||[]).forEach(l=>{
-      const key=l.lat+','+l.lng;
-      const g=bigMemGroups[key]=bigMemGroups[key]||{name:l.name,lat:l.lat,lng:l.lng,ids:[]};
-      if(!g.ids.includes(d.id))g.ids.push(d.id);
-    });
-  });
+  if(bigShow.mems)liveDates().forEach(d=>(d.locs||[]).forEach(l=>{
+    const key=l.lat+','+l.lng;
+    const g=bigMemGroups[key]=bigMemGroups[key]||{name:l.name,lat:l.lat,lng:l.lng,ids:[]};
+    if(!g.ids.includes(d.id))g.ids.push(d.id);
+  }));
   Object.entries(bigMemGroups).forEach(([key,g])=>{
     const ds=g.ids.map(id=>S.dates.find(x=>x.id===id)).filter(Boolean);
-    const c1=ds.length===1?dateCat(ds[0]):null;
-    const head=ds.length===1?`<b>📖 ${esc(ds[0].title)}</b><br>${fmtDay(ds[0].day)}${c1&&c1!==NOCAT?`<br><span class="chip plain">${esc(c1)}</span>`:''}`
+    const head=ds.length===1?`<b>📖 ${esc(ds[0].title)}</b><br>${fmtDay(ds[0].day)}`
       :`<b>📖 ${ds.length} memories here</b><br>${esc(g.name)}`;
     L.marker([g.lat,g.lng],{icon:L.divIcon({className:'',html:'<div class="mem-pin"></div>',iconSize:[0,0]})}).addTo(bigMap)
      .bindPopup(`${head}<div class="maplinks"><a href="#" onclick="flashback('${key}');return false">⏪ Flashback</a></div>`);
