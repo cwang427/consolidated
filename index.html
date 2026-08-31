@@ -5,10 +5,10 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
-<title>Our Dates</title>
-<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>💌</text></svg>">
+<title>ConsoliDated</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📆</text></svg>">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
-<meta name="apple-mobile-web-app-title" content="Our Dates">
+<meta name="apple-mobile-web-app-title" content="ConsoliDated">
 <meta name="theme-color" content="#faf5ef">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,700&family=Nunito+Sans:wght@400;600;700&display=swap" rel="stylesheet">
@@ -23,6 +23,7 @@
   --safe-b:env(safe-area-inset-bottom,0px);
 }
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+[hidden]{display:none!important}
 html,body{margin:0;padding:0}
 body{background:var(--bg);color:var(--ink);font:16px/1.5 "Nunito Sans",-apple-system,system-ui,sans-serif;overscroll-behavior-y:none}
 h1,h2,h3,.serif{font-family:"Fraunces",Georgia,serif;font-weight:700;letter-spacing:-.01em}
@@ -243,9 +244,9 @@ function render(){
   const fo=document.activeElement;
   if(fo&&app.contains(fo)&&/INPUT|TEXTAREA|SELECT/.test(fo.tagName))return;
   if(!S.cfgOk){tb.hidden=true;fab.hidden=true;app.innerHTML=configHelp();return}
-  if(!S.authKnown){app.innerHTML='<div class="hero"><div class="big">💌</div><p>Loading…</p></div>';return}
+  if(!S.authKnown){app.innerHTML='<div class="hero"><div class="big">📆</div><p>Loading…</p></div>';return}
   if(!S.user){tb.hidden=true;fab.hidden=true;app.innerHTML=loginScreen();return}
-  if(!S.ready){app.innerHTML='<div class="hero"><div class="big">💌</div><p>Loading…</p></div>';return}
+  if(!S.ready){app.innerHTML='<div class="hero"><div class="big">📆</div><p>Loading…</p></div>';return}
   if(!S.settings){tb.hidden=true;fab.hidden=true;app.innerHTML=setupScreen();return}
   // identity follows the login when partner emails are set
   S.meLocked=false;
@@ -296,7 +297,7 @@ function fit(m,pts){
   else m.fitBounds(pts,{padding:[40,40]});
 }
 function addNumPin(m,l,ix,total){
-  const html=`<div class="num-pin">${(!total||total<=1)?'❤':ix+1}</div>`;
+  const html=`<div class="num-pin">${(!total||total<=1)?'':ix+1}</div>`;
   L.marker([l.lat,l.lng],{icon:L.divIcon({className:'',html,iconSize:[0,0]})}).addTo(m).bindPopup(esc(l.name));
 }
 
@@ -397,7 +398,7 @@ function openIdea(id){
      <div class="section-title">Notes</div>
      ${noteBoxes('idea',id,i.notes)}
      ${done.length?`<div class="section-title">In the journal</div>`+done.map(d=>`<div class="card mem-card" onclick="openDate('${d.id}')"><span class="mem-day">${fmtDay(d.day)}</span><div class="mem-title">${esc(d.title)}</div></div>`).join(''):''}
-     <button class="btn" onclick="openDateForm(null,'${id}')">💘 We did this — log it</button>
+     <button class="btn" onclick="openDateForm(null,'${id}')">We did this — log it</button>
      <button class="btn danger" onclick="delIdea('${id}')">Delete idea</button>
    </div>`);
   if(i.loc)setTimeout(()=>{const m=mkMap('ideamap');const pts=homeMarkers(m);addNumPin(m,i.loc,0,1);pts.push([i.loc.lat,i.loc.lng]);fit(m,pts)},30);
@@ -423,7 +424,7 @@ function openIdeaForm(id){
   drawLocPicker();
 }
 function saveIdea(id){
-  const title=$('f-title').value.trim();if(!title)return toast('Give it a title 💛');
+  const title=$('f-title').value.trim();if(!title)return toast('Give it a title');
   const data={title,category:$('f-cat').value,desc:$('f-desc').value.trim(),loc:F.locs[0]||null};
   const p=id?db.collection('ideas').doc(id).set(data,{merge:true}):db.collection('ideas').add({...data,notes:{A:'',B:''},created:Date.now()});
   p.then(()=>{closeTop();if(id){closeTop();openIdea(id)}toast('Saved ✓')});
@@ -509,7 +510,7 @@ function calendarView(){
     if(!es.length){cells+=`<div class="cal-cell ${ds===tstr?'today':''}"><span class="dnum">${dd}</span></div>`;continue}
     const ph=photosOf(es[0].id)[0];
     cells+=`<div class="cal-cell has ${ph?'':'nopic'} ${ds===tstr?'today':''}" onclick="calTap('${ds}')">
-      ${ph?`<img src="${ph.thumb}">`:''}<span class="dnum">${dd}</span><span class="heart">${es.length>1?'💕':'❤️'}</span></div>`;
+      ${ph?`<img src="${ph.thumb}">`:''}<span class="dnum">${dd}</span></div>`;
   }
   const mn=S.cal.toLocaleDateString(undefined,{month:'long',year:'numeric'});
   return `<div class="cal-head"><button onclick="calNav(-1)">‹</button><h3>${mn}</h3><button onclick="calNav(1)">›</button></div>
@@ -542,11 +543,11 @@ function openDateForm(id,ideaId){
   drawLocPicker();
 }
 function saveDate(id){
-  const title=$('f-title').value.trim();if(!title)return toast('Give it a title 💛');
+  const title=$('f-title').value.trim();if(!title)return toast('Give it a title');
   const day=$('f-day').value;if(!day)return toast('Pick the day');
   const data={title,day,time:$('f-time').value||'',ideaId:$('f-idea').value||null,locs:F.locs};
   if(id)db.collection('dates').doc(id).set(data,{merge:true}).then(()=>{closeTop();closeTop();openDate(id);toast('Saved ✓')});
-  else db.collection('dates').add({...data,refl:{A:'',B:''},created:Date.now()}).then(r=>{closeAll();openDate(r.id);toast('Logged! Now add photos & thoughts 💕',2600)});
+  else db.collection('dates').add({...data,refl:{A:'',B:''},created:Date.now()}).then(r=>{closeAll();openDate(r.id);toast('Logged! Now add photos & thoughts',2600)});
 }
 
 // ══════════ memory detail ══════════
@@ -650,7 +651,7 @@ async function vDelete(){
 // ══════════ big map ══════════
 let bigMap=null,bigShow={ideas:true,mems:true};
 function mapView(){return `<h1 class="screen-title">Our map</h1><p class="screen-sub">Where we've been & where we're going</p>
- <div class="filters"><button class="${bigShow.ideas?'on':''}" onclick="bigShow.ideas=!bigShow.ideas;render()">💡 Ideas</button><button class="${bigShow.mems?'on':''}" onclick="bigShow.mems=!bigShow.mems;render()">❤️ Memories</button></div>
+ <div class="filters"><button class="${bigShow.ideas?'on':''}" onclick="bigShow.ideas=!bigShow.ideas;render()">💡 Ideas</button><button class="${bigShow.mems?'on':''}" onclick="bigShow.mems=!bigShow.mems;render()">📖 Memories</button></div>
  <div id="bigmap" class="map tall"></div>`}
 function drawBigMap(){
   const el=$('bigmap');if(!el)return;
@@ -664,7 +665,7 @@ function drawBigMap(){
   }});
   if(bigShow.mems)S.dates.forEach(d=>(d.locs||[]).forEach(l=>{
     L.marker([l.lat,l.lng],{icon:L.divIcon({className:'',html:'<div class="mem-pin"></div>',iconSize:[0,0]})}).addTo(bigMap)
-     .bindPopup(`<b>❤️ ${esc(d.title)}</b><br>${fmtDay(d.day)}`);
+     .bindPopup(`<b>📖 ${esc(d.title)}</b><br>${fmtDay(d.day)}`);
     pts.push([l.lat,l.lng]);
   }));
   fit(bigMap,pts);
@@ -706,7 +707,7 @@ function saveNames(){
     B:{name:b.value.trim()||'Partner 2',email:($('s-emailB')?$('s-emailB').value.trim().toLowerCase():'')}
   },{merge:true}).then(()=>toast('Saved ✓'));
 }
-function setMe(k){S.me=k;localStorage.setItem('dj_me',k);render();toast(`Hi, ${pname(k)}! 💛`)}
+function setMe(k){S.me=k;localStorage.setItem('dj_me',k);render();toast(`Hi, ${pname(k)}!`)}
 function pickHome(ix){
   F={locs:[],max:1,homeIx:ix};
   const h=(S.settings.homes||[])[ix];
@@ -734,37 +735,37 @@ async function backup(){
 }
 
 // ══════════ shared login ══════════
-function loginScreen(){return `<div class="hero"><div class="big">💌</div><h1>Our Dates</h1><p>Just us two. Sign in with your login.</p></div>
+function loginScreen(){return `<div class="hero"><div class="big">📆</div><h1>ConsoliDated</h1><p>Our dates in one place</p></div>
  <div class="card"><label>Email</label><input id="li-email" type="email" autocomplete="username" placeholder="your sign-in email">
  <label>Password</label><input id="li-pass" type="password" autocomplete="current-password" onkeydown="if(event.key==='Enter')doLogin()">
- <button class="btn" onclick="doLogin()">Unlock 💘</button>
+ <button class="btn" onclick="doLogin()">Unlock</button>
  <div class="hint" id="li-err" style="margin-top:10px;text-align:center"></div></div>`}
 async function doLogin(){
   const e=$('li-email').value.trim(),p=$('li-pass').value;
   if(!e||!p)return toast('Email and password, please');
   $('li-err').textContent='';toast('Signing in…',10000);
-  try{await firebase.auth().signInWithEmailAndPassword(e,p);toast('Welcome back 💛')}
+  try{await firebase.auth().signInWithEmailAndPassword(e,p);toast('Welcome back')}
   catch(err){console.error(err);$('li-err').textContent='That didn’t work — double-check your email & password.';toast('Sign-in failed',2000)}
 }
 function signOut(){firebase.auth().signOut().then(()=>location.reload())}
 
 // ══════════ first-run screens ══════════
-function setupScreen(){return `<div class="hero"><div class="big">💌</div><h1>Our Dates</h1><p>A little home for your date ideas, memories, photos, and the map of it all.</p></div>
+function setupScreen(){return `<div class="hero"><div class="big">📆</div><h1>ConsoliDated</h1><p>A little home for your date ideas, memories, photos, and the map of it all.</p></div>
  <div class="card"><label>Partner 1's name</label><input id="su-a" placeholder="e.g. Mr. Soccerboy">
  <label>Partner 1's sign-in email</label><input id="su-ae" type="email" value="${esc((S.user&&S.user.email)||'')}">
  <label>Partner 2's name</label><input id="su-b" placeholder="e.g. Ms. Chairgirl">
  <label>Partner 2's sign-in email</label><input id="su-be" type="email" placeholder="their Firebase login email">
  <div class="hint">With each email filled in, the app knows who's who from the login itself — no picking, no accidental switching.</div>
- <button class="btn" onclick="finishSetup()">Let's go 💘</button></div>`}
+ <button class="btn" onclick="finishSetup()">Let's go</button></div>`}
 function finishSetup(){
   const a=$('su-a').value.trim(),b=$('su-b').value.trim();
-  if(!a||!b)return toast('Both names, please 💛');
+  if(!a||!b)return toast('Both names, please');
   db.collection('meta').doc('settings').set({A:{name:a,email:$('su-ae').value.trim().toLowerCase()},B:{name:b,email:$('su-be').value.trim().toLowerCase()},homes:[]});
 }
 function whoAmI(){return `<div class="hero"><div class="big">👋</div><h1>Who are you?</h1><p>So your notes are saved under the right name. You can switch any time in Settings.</p></div>
  <button class="whoami-btn" onclick="setMe('A')"><span class="dotA"></span>${esc(pname('A'))}</button>
  <button class="whoami-btn" onclick="setMe('B')"><span class="dotB"></span>${esc(pname('B'))}</button>`}
-function configHelp(){return `<div class="hero"><div class="big">💌</div><h1>Our Dates</h1><p>Almost there — the app just needs its database keys.</p></div>
+function configHelp(){return `<div class="hero"><div class="big">📆</div><h1>ConsoliDated</h1><p>Almost there — the app just needs its database keys.</p></div>
  <div class="steps">
  <p><b>1.</b> Go to <code>console.firebase.google.com</code> and create a free project (Spark plan — no credit card needed).</p>
  <p><b>2.</b> In it, open <b>Build → Firestore Database → Create database</b> and pick the region closest to you.</p>
@@ -787,7 +788,7 @@ $('photoInput').addEventListener('change',async e=>{
       ok++;
     }catch(err){console.error(err)}
   }
-  toast(ok===files.length?(ok>1?`${ok} photos added 💞`:'Photo added 💞'):`${ok} of ${files.length} added — one photo format didn't work`);
+  toast(ok===files.length?(ok>1?`${ok} photos added ✓`:'Photo added ✓'):`${ok} of ${files.length} added — one photo format didn't work`);
 });
 boot();
 render();

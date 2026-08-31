@@ -1,4 +1,4 @@
-# Our Dates 💌
+# ConsoliDated
 
 A private little web app for two: a shared date-idea list, a journal of dates that happened (with each partner's own reflections and photos from the day), a calendar/album view of your history, and maps that always show both home bases — including your route across the city on multi-stop days.
 
@@ -56,4 +56,4 @@ The app walks you through it: sign in with your own login (once per device — i
 - **Backup**: Settings → Download backup grabs everything (including photos) as one JSON file.
 
 ## Customizing
-It's one file. Colors live in the `:root` CSS variables at the top; categories in the `CATS` array. Ask Claude to change anything. 💛
+It's one file. Colors live in the `:root` CSS variables at the top; categories in the `CATS` array. Ask Claude to change anything.
