@@ -79,6 +79,7 @@ label{display:block;font-size:13px;font-weight:700;color:var(--plum);margin:14px
 /* ---- maps ---- */
 .map{height:230px;border-radius:14px;border:1px solid var(--line);z-index:1}
 .map.tall{height:calc(100dvh - 210px)}
+.map.tall.with-cats{height:calc(100dvh - 258px)}
 .home-pin{background:#fff;border:2px solid var(--plum);border-radius:12px;padding:1px 7px;font-size:12px;font-weight:700;color:var(--plum);white-space:nowrap;box-shadow:var(--shadow);transform:translate(-50%,-100%)}
 .num-pin{width:26px;height:26px;border-radius:50%;background:var(--rose);border:2px solid #fff;color:#fff;font-size:13px;font-weight:800;display:flex;align-items:center;justify-content:center;box-shadow:var(--shadow);transform:translate(-50%,-50%)}
 .idea-pin{width:18px;height:18px;border-radius:50% 50% 50% 0;background:var(--rose);border:2px solid #fff;transform:rotate(-45deg) translate(-70%,-10%);box-shadow:var(--shadow)}
@@ -878,19 +879,28 @@ async function vDelete(){
 }
 
 // ══════════ big map ══════════
-let bigMap=null,bigShow={ideas:true,mems:true};
-function mapView(){return `<h1 class="screen-title">Our map</h1><p class="screen-sub">Where we've been & where we're going</p>
+let bigMap=null,bigShow={ideas:true,mems:true,cat:'all'};
+const mappedIdeas=()=>S.ideas.filter(i=>i.loc);
+function mapView(){
+  // only offer categories that actually have a pin on the map
+  const cats=CATS.filter(c=>mappedIdeas().some(i=>i.category===c));
+  if(bigShow.cat!=='all'&&!cats.includes(bigShow.cat))bigShow.cat='all';
+  const catRow=(bigShow.ideas&&cats.length>1)?`<div class="filters">${['all'].concat(cats).map(c=>`<button class="${bigShow.cat===c?'on':''}" data-c="${esc(c)}" onclick="setMapCat(this)">${c==='all'?'All ideas':esc(c)}</button>`).join('')}</div>`:'';
+  return `<h1 class="screen-title">Our map</h1><p class="screen-sub">Where we've been & where we're going</p>
  <div class="filters"><button class="${bigShow.ideas?'on':''}" onclick="bigShow.ideas=!bigShow.ideas;render()">💡 Ideas</button><button class="${bigShow.mems?'on':''}" onclick="bigShow.mems=!bigShow.mems;render()">📖 Memories</button></div>
- <div id="bigmap" class="map tall"></div>`}
+ ${catRow}
+ <div id="bigmap" class="map tall${catRow?' with-cats':''}"></div>`;
+}
+function setMapCat(btn){bigShow.cat=btn.dataset.c;render()}
 let bigMemGroups={};
 function drawBigMap(){
   const el=$('bigmap');if(!el)return;
   if(bigMap){try{bigMap.remove()}catch(e){}bigMap=null}
   bigMap=mkMap('bigmap');bigMap.scrollWheelZoom.enable();
   const pts=homeMarkers(bigMap);
-  if(bigShow.ideas)S.ideas.forEach(i=>{if(i.loc){
+  if(bigShow.ideas)mappedIdeas().forEach(i=>{if(bigShow.cat==='all'||i.category===bigShow.cat){
     L.marker([i.loc.lat,i.loc.lng],{icon:L.divIcon({className:'',html:'<div class="idea-pin"></div>',iconSize:[0,0]})}).addTo(bigMap)
-     .bindPopup(`<b>💡 ${esc(i.title)}</b><br>${esc(i.loc.name)}${extMapLinks([i.loc])}`);
+     .bindPopup(`<b>💡 ${esc(i.title)}</b><br>${esc(i.loc.name)}${i.category?`<br><span class="chip plain">${esc(i.category)}</span>`:''}${extMapLinks([i.loc])}`);
     pts.push([i.loc.lat,i.loc.lng]);
   }});
   // one pin per unique memory location; its popup flashes back to the entry (or a list)
