@@ -17,7 +17,7 @@ A private two-person date-journal web app: shared date-idea list, journal of log
 - `ideas`: {title, category, desc, loc{name,lat,lng}|null, notes{A,B}, created}
 - `dates`: {title, day 'YYYY-MM-DD', time 'HH:MM'|'', ideaId|null, refl{A,B}, locs[{name,lat,lng}...], created}
 - `photos`: {dateId, thumb(dataURL), fullId, created} · `photoFulls`: {data(dataURL)}
-- `meta/settings`: {homes:[{label,lat,lng}|null ×2]} — created lazily via merge writes; no other settings remain.
+- `meta/settings`: {homes:[{label,lat,lng,addr|null}|null ×2]} — created lazily via merge writes; no other settings remain. `addr` is the exact address chosen from search when the home was set (shown in the home picker); when null, the picker falls back to reverse geocoding, which is only approximate.
 
 **Data safety:** all user data lives in Firestore, none in this repo. Never write migrations that rewrite existing docs without explicit user sign-off, and remind the user to use Settings → Download backup before schema-touching changes. There is currently no restore-from-backup feature (known gap).
 

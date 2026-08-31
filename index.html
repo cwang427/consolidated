@@ -493,25 +493,32 @@ function drawLocPicker(){
   updateLocAddr();
 }
 const addrCache={};
+function fmtAddr(a,fallback){
+  a=a||{};
+  const street=[a.house_number,a.road].filter(Boolean).join(' ');
+  const city=a.city||a.town||a.village||a.hamlet||a.county||'';
+  return [street,city,[a.state,a.postcode].filter(Boolean).join(' ')].filter(Boolean).join(', ')||fallback||'';
+}
 async function updateLocAddr(){
   const el=$('loc-addr');if(!el)return;
   const l=F.locs[0];
   if(!l){el.hidden=true;return}
-  const key=l.lat+','+l.lng;
   el.hidden=false;
+  // exact address captured when this spot was picked from search — trust it over a
+  // reverse lookup, which snaps to the nearest OSM address point and can be a neighbor's
+  if(l.addr){el.textContent='📮 '+l.addr;return}
+  const key=l.lat+','+l.lng;
   if(!(key in addrCache)){
     el.textContent='Looking up address…';
     try{
       const r=await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${l.lat}&lon=${l.lng}`);
-      const js=await r.json(),a=js.address||{};
-      const street=[a.house_number,a.road].filter(Boolean).join(' ');
-      const city=a.city||a.town||a.village||a.hamlet||a.county||'';
-      addrCache[key]=[street,city,[a.state,a.postcode].filter(Boolean).join(' ')].filter(Boolean).join(', ')||js.display_name||'';
+      const js=await r.json();
+      addrCache[key]=fmtAddr(js.address,js.display_name);
     }catch(e){addrCache[key]=''}
   }
   const cur=F&&F.locs[0],el2=$('loc-addr');
-  if(!el2||!cur||cur.lat+','+cur.lng!==key)return; // sheet closed or pin moved mid-lookup
-  el2.textContent=addrCache[key]?'📮 '+addrCache[key]:'Address unavailable for this spot';
+  if(!el2||!cur||cur.addr||cur.lat+','+cur.lng!==key)return; // sheet closed or pin moved mid-lookup
+  el2.textContent=addrCache[key]?'📮 '+addrCache[key]+' (approximate)':'Address unavailable for this spot';
 }
 function rmLoc(ix){F.locs.splice(ix,1);drawLocPicker()}
 function addLoc(l){
@@ -527,10 +534,12 @@ async function locSearch(){
   const q=$('loc-q').value.trim();if(!q)return;
   $('loc-results').innerHTML='<div class="hint">Searching…</div>';
   try{
-    const r=await fetch(`https://nominatim.openstreetmap.org/search?format=json&limit=5&q=${encodeURIComponent(q)}`);
+    const r=await fetch(`https://nominatim.openstreetmap.org/search?format=json&limit=5&addressdetails=1&q=${encodeURIComponent(q)}`);
     const js=await r.json();
     $('loc-results').innerHTML=js.length?js.map(p=>{
-      const payload=JSON.stringify({name:shortName(p.display_name),lat:+p.lat,lng:+p.lon}).replace(/'/g,'&#39;').replace(/"/g,'&quot;');
+      const l={name:shortName(p.display_name),lat:+p.lat,lng:+p.lon};
+      if(F&&F.showAddr)l.addr=fmtAddr(p.address,p.display_name);
+      const payload=JSON.stringify(l).replace(/'/g,'&#39;').replace(/"/g,'&quot;');
       return `<button onclick='addLoc(JSON.parse(this.dataset.l))' data-l="${payload}">📍 ${esc(p.display_name)}</button>`;
     }).join(''):'<div class="hint">No results — try adding the city or neighborhood.</div>';
   }catch(e){$('loc-results').innerHTML='<div class="hint">Search failed — check your connection.</div>'}
@@ -759,7 +768,7 @@ function pickHome(ix){
   if(ix!==(S.me==='A'?0:1))return toast('You can only set your own home');
   F={locs:[],max:1,homeIx:ix,showAddr:true};
   const h=(S.settings.homes||[])[ix];
-  if(h&&h.lat!=null)F.locs=[{name:h.label,lat:h.lat,lng:h.lng}];
+  if(h&&h.lat!=null)F.locs=[{name:h.label,lat:h.lat,lng:h.lng,addr:h.addr||null}];
   openOverlay(`<div class="sheet-head"><button class="hbtn subtle" onclick="closeTop()">Cancel</button><h2>Set home base</h2><button class="hbtn" onclick="saveHome()">Save</button></div>
    <div class="sheet-body"><label>Label</label><input id="f-hlabel" value="${esc(h&&h.label?h.label:pname(ix===0?'A':'B')+'’s place')}">
    <label>Location</label>${locPickerHTML()}</div>`);
@@ -768,7 +777,7 @@ function pickHome(ix){
 function saveHome(){
   const l=F.locs[0];if(!l)return toast('Pick a location first');
   const homes=(S.settings.homes||[]).slice();while(homes.length<2)homes.push(null);
-  homes[F.homeIx]={label:$('f-hlabel').value.trim()||l.name,lat:l.lat,lng:l.lng};
+  homes[F.homeIx]={label:$('f-hlabel').value.trim()||l.name,lat:l.lat,lng:l.lng,addr:l.addr||addrCache[l.lat+','+l.lng]||null};
   db.collection('meta').doc('settings').set({homes},{merge:true}).then(()=>{closeTop();toast('Home saved 🏠')});
 }
 async function backup(){
