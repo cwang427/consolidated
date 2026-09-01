@@ -66,13 +66,13 @@ label{display:block;font-size:13px;font-weight:700;color:var(--plum);margin:14px
 #fab:active{transform:scale(.94)}
 
 /* ---- overlays / sheets ---- */
-.overlay{position:fixed;inset:0;background:rgba(61,44,51,.35);z-index:500;display:flex;align-items:flex-end;animation:fade .18s}
+.overlay{position:fixed;inset:0;background:rgba(61,44,51,.35);z-index:500;display:flex;align-items:flex-end;animation:fade .18s;overscroll-behavior:contain;touch-action:none}
 .sheet{background:var(--bg);width:100%;max-width:560px;margin:0 auto;border-radius:20px 20px 0 0;max-height:94dvh;display:flex;flex-direction:column;animation:up .22s ease-out}
 .sheet-head{display:flex;align-items:center;gap:10px;padding:14px 16px 10px;border-bottom:1px solid var(--line)}
 .sheet-head h2{flex:1;font-size:19px;margin:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .sheet-head .hbtn{font-size:14px;font-weight:700;color:var(--rose-dark);padding:6px 10px;border-radius:10px}
 .sheet-head .hbtn.subtle{color:var(--muted)}
-.sheet-body{overflow-y:auto;padding:14px 16px calc(28px + var(--safe-b));-webkit-overflow-scrolling:touch}
+.sheet-body{overflow-y:auto;padding:14px 16px calc(28px + var(--safe-b));-webkit-overflow-scrolling:touch;overscroll-behavior:contain;touch-action:pan-y}
 @keyframes up{from{transform:translateY(40px);opacity:.6}to{transform:none;opacity:1}}
 @keyframes fade{from{opacity:0}to{opacity:1}}
 
@@ -318,15 +318,31 @@ function fabTap(){S.tab==='journal'?openDateForm():openIdeaForm()}
 
 // ══════════ overlays ══════════
 const overlayStack=[];
+// Anything covering the app freezes the page behind it. body{position:fixed} is the only
+// thing iOS reliably respects; the offset keeps the background from jumping to the top.
+let scrollLocks=0,lockedY=0;
+function lockScroll(){
+  if(scrollLocks++)return;
+  lockedY=window.scrollY;
+  document.body.style.position='fixed';
+  document.body.style.top=`-${lockedY}px`;
+  document.body.style.left='0';document.body.style.right='0';
+}
+function unlockScroll(){
+  if(scrollLocks===0||--scrollLocks)return;
+  document.body.style.position='';document.body.style.top='';
+  document.body.style.left='';document.body.style.right='';
+  window.scrollTo(0,lockedY);
+}
 function openOverlay(inner){
   const el=document.createElement('div');el.className='overlay';
   el.innerHTML=`<div class="sheet">${inner}</div>`;
   el.addEventListener('click',e=>{if(e.target===el)closeTop()});
-  document.body.appendChild(el);overlayStack.push(el);
+  document.body.appendChild(el);overlayStack.push(el);lockScroll();
   growAll(el);setTimeout(()=>growAll(el),50); // again once webfonts settle
   return el;
 }
-function closeTop(){const el=overlayStack.pop();if(el)el.remove()}
+function closeTop(){const el=overlayStack.pop();if(el){el.remove();unlockScroll()}}
 // grow a textarea to fit its content: a nested scrollbar in a 70px box makes both
 // reading a long reflection and keeping track of what you've typed needlessly hard
 function autoGrow(el){
@@ -478,7 +494,7 @@ function openIdea(id){
      <button class="btn" onclick="openDateForm(null,'${id}')">We did this — log it</button>
      <button class="btn danger" onclick="delIdea('${id}')">Delete idea</button>
    </div>`);
-  if(i.loc)setTimeout(()=>{const m=mkMap('ideamap');const pts=homeMarkers(m);addNumPin(m,i.loc,0,1);pts.push([i.loc.lat,i.loc.lng]);fit(m,pts)},30);
+  if(i.loc)setTimeout(()=>{if(!$('ideamap'))return;const m=mkMap('ideamap');const pts=homeMarkers(m);addNumPin(m,i.loc,0,1);pts.push([i.loc.lat,i.loc.lng]);fit(m,pts)},30);
 }
 function delIdea(id){
   if(!confirm('Delete this idea? (Logged memories are kept.)'))return;
@@ -737,6 +753,7 @@ function openDate(id){
      <button class="btn danger" onclick="delDate('${id}')">Delete this memory</button>
    </div>`);
   if(locs.length)setTimeout(()=>{
+    if(!$('datemap'))return; // sheet closed before the deferred draw ran
     const m=mkMap('datemap');const pts=homeMarkers(m);
     locs.forEach((l,ix)=>{addNumPin(m,l,ix,locs.length);pts.push([l.lat,l.lng])});
     if(locs.length>1)L.polyline(locs.map(l=>[l.lat,l.lng]),{color:'#a83a55',weight:3,dashArray:'6 8'}).addTo(m);
@@ -924,7 +941,7 @@ async function compressClip(v,start,ms){
 function openClipEditor(file,dateId){
   return new Promise(resolve=>{
     const url=URL.createObjectURL(file);
-    openOverlay(`<div class="sheet-head"><button class="hbtn subtle" onclick="clipCancel()">Cancel</button><h2>Trim to a 1s loop</h2><button class="hbtn" onclick="clipSave('${dateId}')">Save</button></div>
+    openOverlay(`<div class="sheet-head"><button class="hbtn subtle" onclick="clipCancel()">Cancel</button><h2>Trim your clip</h2><button class="hbtn" onclick="clipSave('${dateId}')">Save</button></div>
      <div class="sheet-body">
        <video id="clip-v" src="${url}" muted playsinline></video>
        <label>Start</label>
@@ -932,7 +949,6 @@ function openClipEditor(file,dateId){
        <label>End</label>
        <input type="range" id="clip-end" min="0" max="0" step="0.1" value="0" oninput="clipAdjust('end')">
        <div class="hint" id="clip-info">Loading…</div>
-       <div class="hint">Silent, and loops forever — up to 3 seconds. Only the part you keep is saved; the original video never leaves your phone.</div>
      </div>`);
     CLIP={resolve:()=>{URL.revokeObjectURL(url);resolve()},busy:false};
     const v=$('clip-v');
@@ -976,6 +992,28 @@ async function clipSave(dateId){
 }
 
 // ══════════ fullscreen viewer ══════════
+// Clips ping-pong instead of cutting back to the start. No browser supports a negative
+// playbackRate, so the forward pass plays natively and the reverse pass steps currentTime
+// back a frame at a time — measured ~6ms a seek against an 83ms frame budget.
+let boomStop=null;
+function playBoomerang(v){
+  let dir=1,raf=0,last=0;
+  const step=1/CLIP_FPS;
+  const tick=ts=>{
+    if(!v.isConnected){boomStop=null;return}
+    if(dir>0){
+      if(v.duration&&v.currentTime>=v.duration-0.03){dir=-1;last=ts;v.pause()}
+    }else if(ts-last>=1000/CLIP_FPS){
+      last=ts;
+      const next=v.currentTime-step;
+      if(next<=0.001){v.currentTime=0;dir=1;v.play().catch(()=>{})}
+      else v.currentTime=next;
+    }
+    raf=requestAnimationFrame(tick);
+  };
+  raf=requestAnimationFrame(tick);
+  return ()=>cancelAnimationFrame(raf);
+}
 let V=null;
 function openViewer(dateId,ix){
   V={list:photosOf(dateId),ix};
@@ -984,7 +1022,7 @@ function openViewer(dateId,ix){
    <div class="v-img"><img id="v-img" src=""></div>
    <div class="v-bar"><button onclick="vNav(-1)">‹ Prev</button><button id="v-count" style="font-weight:400;color:#ccb"></button><button onclick="vNav(1)">Next ›</button></div>
    <div style="text-align:center;padding-bottom:calc(12px + var(--safe-b))"><button style="color:#e8909a;font-size:13px" onclick="vDelete()">Delete this photo</button></div>`;
-  document.body.appendChild(el);
+  document.body.appendChild(el);lockScroll();
   const box=el.querySelector('.v-img');
   box.addEventListener('pointerdown',vPtrDown);
   box.addEventListener('pointermove',vPtrMove);
@@ -1074,13 +1112,18 @@ async function vShow(){
   $('v-count').textContent=`${V.ix+1} / ${V.list.length}`;
   // clips play as a silent loop; photos stay images (and keep pinch/pan)
   const clip=p.kind==='clip';
-  box.innerHTML=clip?`<video id="v-img" autoplay loop muted playsinline poster="${p.thumb}"></video>`:`<img id="v-img">`;
+  if(boomStop){boomStop();boomStop=null}
+  // no `loop` attribute — playBoomerang drives the looping so it can reverse
+  box.innerHTML=clip?`<video id="v-img" autoplay muted playsinline poster="${p.thumb}"></video>`:`<img id="v-img">`;
   if(!clip)$('v-img').src=p.thumb;
   if(!p._full){try{const d=await db.collection('photoFulls').doc(p.fullId).get();p._full=(d.data()||{}).data}catch(e){}}
-  if(V&&p._full&&V.list[V.ix]===p&&$('v-img'))$('v-img').src=p._full;
+  if(V&&p._full&&V.list[V.ix]===p&&$('v-img')){
+    $('v-img').src=p._full;
+    if(clip)boomStop=playBoomerang($('v-img'));
+  }
 }
 function vNav(n){if(!V)return;V.ix=(V.ix+n+V.list.length)%V.list.length;vResetZoom();vShow()}
-function closeViewer(){const el=$('viewer');if(el)el.remove();V=null}
+function closeViewer(){const el=$('viewer');if(el){el.remove();unlockScroll()}if(boomStop){boomStop();boomStop=null}V=null}
 async function vDelete(){
   if(!V||!confirm('Delete this photo?'))return;
   const p=V.list[V.ix];
