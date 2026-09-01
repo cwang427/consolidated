@@ -377,20 +377,14 @@ function addNumPin(m,l,ix,total){
   const html=`<div class="num-pin">${(!total||total<=1)?'':ix+1}</div>`;
   L.marker([l.lat,l.lng],{icon:L.divIcon({className:'',html,iconSize:[0,0]})}).addTo(m).bindPopup(esc(l.name));
 }
-// "Open in Apple/Google Maps" links. One stop → a pin, zoomed in; 2+ stops → directions
-// through every stop in order. (External map URLs can't carry extra pins, so the home
-// bases only show on the in-app maps.)
+// "Open in Apple/Google Maps" for a single spot, pinned and zoomed. Ideas only: those are
+// the ones you route to. A logged memory's story is the in-app map with its home bases
+// and route line, which no external map URL can reproduce anyway.
 const ll=l=>`${l.lat},${l.lng}`;
-function extMapLinks(locs){
-  if(!locs||!locs.length)return'';
-  let a,g;
-  if(locs.length===1){
-    a=`https://maps.apple.com/?ll=${ll(locs[0])}&q=${encodeURIComponent(locs[0].name||'Pin')}`;
-    g=`https://www.google.com/maps/search/?api=1&query=${ll(locs[0])}`;
-  }else{
-    a=`https://maps.apple.com/?saddr=${ll(locs[0])}&daddr=${locs.slice(1).map(ll).join('+to:')}`;
-    g=`https://www.google.com/maps/dir/?api=1&origin=${ll(locs[0])}&destination=${ll(locs[locs.length-1])}${locs.length>2?`&waypoints=${locs.slice(1,-1).map(ll).join('|')}`:''}`;
-  }
+function extMapLinks(l){
+  if(!l)return'';
+  const a=`https://maps.apple.com/?ll=${ll(l)}&q=${encodeURIComponent(l.name||'Pin')}`;
+  const g=`https://www.google.com/maps/search/?api=1&query=${ll(l)}`;
   return `<div class="maplinks"><a href="${a}" target="_blank" rel="noopener">Apple Maps</a><a href="${g}" target="_blank" rel="noopener">Google Maps</a></div>`;
 }
 
@@ -487,7 +481,7 @@ function openIdea(id){
    <div class="sheet-body">
      ${i.category?`<span class="chip plain">${esc(i.category)}</span>`:''}
      ${i.desc?`<p style="margin:10px 0 4px;white-space:pre-wrap">${esc(i.desc)}</p>`:''}
-     ${i.loc?`<div class="section-title">📍 ${esc(i.loc.name)}</div><div id="ideamap" class="map"></div>${extMapLinks([i.loc])}`:''}
+     ${i.loc?`<div class="section-title">📍 ${esc(i.loc.name)}</div><div id="ideamap" class="map"></div>${extMapLinks(i.loc)}`:''}
      <div class="section-title">Notes</div>
      ${noteBoxes('idea',id,i.notes)}
      ${done.length?`<div class="section-title">In the journal</div>`+done.map(d=>`<div class="card mem-card" onclick="openDate('${d.id}')"><span class="mem-day">${fmtDay(d.day)}</span><div class="mem-title">${esc(d.title)}</div></div>`).join(''):''}
@@ -745,7 +739,7 @@ function openDate(id){
    <div class="sheet-body">
      <span class="mem-day">${fmtDay(d.day)}${d.time?' · '+fmtTime(d.time):''}</span>
      ${idea?`<div style="margin-top:6px"><span class="chip" onclick="openIdea('${idea.id}')">💡 ${esc(idea.title)}</span></div>`:''}
-     ${locs.length?`<div class="section-title">${locs.length>1?'Our route that day':'Where'}</div><div id="datemap" class="map"></div>${extMapLinks(locs)}
+     ${locs.length?`<div class="section-title">${locs.length>1?'Our route that day':'Where'}</div><div id="datemap" class="map"></div>
        <div class="loc-list" style="margin-top:8px">${locs.map((l,ix)=>`<div class="loc-row">${locs.length>1?`<span class="n">${ix+1}</span>`:'📍'}<span class="grow">${esc(l.name)}</span></div>`).join('')}</div>`:''}
      <div id="psec">${photoSectionHTML(id)}</div>
      <div class="section-title">Our thoughts</div>
@@ -993,22 +987,28 @@ async function clipSave(dateId){
 
 // ══════════ fullscreen viewer ══════════
 // Clips ping-pong instead of cutting back to the start. No browser supports a negative
-// playbackRate, so the forward pass plays natively and the reverse pass steps currentTime
-// back a frame at a time — measured ~6ms a seek against an 83ms frame budget.
+// playbackRate, so both directions are driven by seeking (~6ms a seek against an 83ms
+// frame budget). Letting the forward half play natively instead cost a ~100ms stall at
+// the turn, waiting on play() to spin back up; seeking both ways is even throughout.
+// Position advances by real elapsed time and only seeks when the frame index changes,
+// so playback runs at true speed rather than at the animation-frame cadence.
 let boomStop=null;
 function playBoomerang(v){
-  let dir=1,raf=0,last=0;
   const step=1/CLIP_FPS;
+  let dir=1,pos=0,last=0,frame=-1,raf=0;
+  v.pause();
   const tick=ts=>{
     if(!v.isConnected){boomStop=null;return}
-    if(dir>0){
-      if(v.duration&&v.currentTime>=v.duration-0.03){dir=-1;last=ts;v.pause()}
-    }else if(ts-last>=1000/CLIP_FPS){
-      last=ts;
-      const next=v.currentTime-step;
-      if(next<=0.001){v.currentTime=0;dir=1;v.play().catch(()=>{})}
-      else v.currentTime=next;
+    const dur=v.duration||0;
+    if(dur&&last){
+      const top=Math.max(0,dur-step);
+      pos+=dir*(ts-last)/1000;
+      if(pos>=top){pos=top;dir=-1}
+      else if(pos<=0){pos=0;dir=1}
+      const f=Math.round(pos*CLIP_FPS);
+      if(f!==frame){frame=f;v.currentTime=Math.max(0,Math.min(top,f*step))}
     }
+    last=ts;
     raf=requestAnimationFrame(tick);
   };
   raf=requestAnimationFrame(tick);
@@ -1114,7 +1114,7 @@ async function vShow(){
   const clip=p.kind==='clip';
   if(boomStop){boomStop();boomStop=null}
   // no `loop` attribute — playBoomerang drives the looping so it can reverse
-  box.innerHTML=clip?`<video id="v-img" autoplay muted playsinline poster="${p.thumb}"></video>`:`<img id="v-img">`;
+  box.innerHTML=clip?`<video id="v-img" muted playsinline poster="${p.thumb}"></video>`:`<img id="v-img">`;
   if(!clip)$('v-img').src=p.thumb;
   if(!p._full){try{const d=await db.collection('photoFulls').doc(p.fullId).get();p._full=(d.data()||{}).data}catch(e){}}
   if(V&&p._full&&V.list[V.ix]===p&&$('v-img')){
@@ -1154,7 +1154,7 @@ function drawBigMap(){
   const pts=homeMarkers(bigMap);
   if(bigShow.ideas)mappedIdeas().forEach(i=>{if(bigShow.cat==='all'||i.category===bigShow.cat){
     L.marker([i.loc.lat,i.loc.lng],{icon:L.divIcon({className:'',html:'<div class="idea-pin"></div>',iconSize:[0,0]})}).addTo(bigMap)
-     .bindPopup(`<b>💡 ${esc(i.title)}</b><br>${esc(i.loc.name)}${i.category?`<br><span class="chip plain">${esc(i.category)}</span>`:''}${extMapLinks([i.loc])}`);
+     .bindPopup(`<b>💡 ${esc(i.title)}</b><br>${esc(i.loc.name)}${i.category?`<br><span class="chip plain">${esc(i.category)}</span>`:''}${extMapLinks(i.loc)}`);
     pts.push([i.loc.lat,i.loc.lng]);
   }});
   // one pin per unique memory location; its popup flashes back to the entry (or a list)
