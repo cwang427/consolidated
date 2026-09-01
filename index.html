@@ -237,7 +237,7 @@ const CATS=['Food & drink','Outdoors','Arts & culture','At home','Adventure','Da
 // identity = SHA-256 of the signed-in email; the real addresses live only in the Firebase console
 const PARTNERS={A:{name:'Mr. Soccerboy',emailHash:'9ed83fa4276eb047b246d4ad094cf8daf2bef8187f2c97e98a67c8294c30f929'},B:{name:'Ms. Chairgirl',emailHash:'e8f60b7542c1a41a288c21f2d65ac96ef6c299fa71f1fa8bbce7859cc2e93cd9'}};
 let db=null;
-const S={ready:false,cfgOk:false,authKnown:false,user:null,settings:null,ideas:[],dates:[],photos:[],
+const S={ready:false,cfgOk:false,authKnown:false,user:null,settings:null,places:{},ideas:[],dates:[],photos:[],
   me:localStorage.getItem('dj_me')||null,
   tab:'ideas',ideaFilter:'all',journalMode:'album',
   cal:(()=>{const d=new Date();return new Date(d.getFullYear(),d.getMonth(),1)})()};
@@ -249,6 +249,30 @@ const photosOf=id=>S.photos.filter(p=>p.dateId===id).sort((a,b)=>((a.order??a.cr
 const liveDates=()=>S.dates.filter(d=>!d.trash);
 const datesOfIdea=id=>liveDates().filter(d=>d.ideaId===id);
 const otherOf=k=>k==='A'?'B':'A';
+// A spot is identified by its rounded coordinates (~1m). Underscores, not dots, because
+// dots would read as nested field paths in Firestore. `meta/places` maps that key to the
+// couple's chosen label, so naming a place once names it everywhere it appears.
+const placeKey=l=>`${Math.round(l.lat*1e5)}_${Math.round(l.lng*1e5)}`;
+const labelOf=l=>(l&&l.lat!=null&&S.places[placeKey(l)])||(l&&l.name)||'';
+function savePlaces(locs){
+  const upd={};
+  (locs||[]).forEach(l=>{if(l&&l.lat!=null&&l.name&&S.places[placeKey(l)]!==l.name)upd[placeKey(l)]=l.name});
+  if(Object.keys(upd).length)db.collection('meta').doc('places').set(upd,{merge:true});
+}
+// every distinct spot the two of you have already used, for autocomplete
+function knownPlaces(){
+  const out=new Map();
+  const add=l=>{if(!l||l.lat==null)return;const k=placeKey(l);
+    if(!out.has(k))out.set(k,{name:labelOf(l),addr:l.addr||'',lat:l.lat,lng:l.lng})};
+  S.ideas.forEach(i=>add(i.loc));
+  liveDates().forEach(d=>(d.locs||[]).forEach(add));
+  return [...out.values()];
+}
+function matchPlaces(q){
+  q=(q||'').trim().toLowerCase();
+  if(!q)return [];
+  return knownPlaces().filter(p=>(p.name||'').toLowerCase().includes(q)||(p.addr||'').toLowerCase().includes(q)).slice(0,5);
+}
 function fmtDay(ds){if(!ds)return'';const[y,m,d]=ds.split('-').map(Number);return new Date(y,m-1,d).toLocaleDateString(undefined,{weekday:'short',month:'short',day:'numeric',year:'numeric'})}
 function fmtTime(t){const[h,mi]=t.split(':').map(Number);return `${((h+11)%12)+1}:${String(mi).padStart(2,'0')} ${h>=12?'PM':'AM'}`}
 function todayStr(){const d=new Date();return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`}
@@ -288,6 +312,7 @@ function subscribe(){
   if(subbed)return;subbed=true;
   db.collection('meta').doc('settings').onSnapshot(d=>{S.settings=d.exists?d.data():{};S.ready=true;render()},
     e=>{console.error(e);S.ready=true;render();toast('Database error — check your Firestore rules',4000)});
+  db.collection('meta').doc('places').onSnapshot(d=>{S.places=d.exists?d.data():{};render()},e=>console.error(e));
   db.collection('ideas').onSnapshot(q=>{S.ideas=q.docs.map(d=>({id:d.id,...d.data()}));S.ideas.sort((a,b)=>(b.created||0)-(a.created||0));render()});
   db.collection('dates').onSnapshot(q=>{S.dates=q.docs.map(d=>({id:d.id,...d.data()}));S.dates.sort((a,b)=>(b.day||'').localeCompare(a.day||'')||(b.created||0)-(a.created||0));initCalMonth();render()});
   db.collection('photos').onSnapshot(q=>{S.photos=q.docs.map(d=>({id:d.id,...d.data()}));S.photos.sort((a,b)=>(a.created||0)-(b.created||0));render();refreshPhotoGrid()});
@@ -378,7 +403,7 @@ function fit(m,pts){
 }
 function addNumPin(m,l,ix,total){
   const html=`<div class="num-pin">${(!total||total<=1)?'':ix+1}</div>`;
-  L.marker([l.lat,l.lng],{icon:L.divIcon({className:'',html,iconSize:[0,0]})}).addTo(m).bindPopup(esc(l.name));
+  L.marker([l.lat,l.lng],{icon:L.divIcon({className:'',html,iconSize:[0,0]})}).addTo(m).bindPopup(esc(labelOf(l)));
 }
 // "Open in Apple/Google Maps" for a single spot, pinned and zoomed. Ideas only: those are
 // the ones you route to. A logged memory's story is the in-app map with its home bases
@@ -467,7 +492,7 @@ function ideasView(){
     const done=datesOfIdea(i.id).length;
     return `<div class="card idea-card" onclick="openIdea('${i.id}')">
       <div class="grow"><p class="idea-title">${esc(i.title)}</p>
-      <div class="idea-meta">${i.category?`<span class="chip plain">${esc(i.category)}</span>`:''}${i.loc?`<span>📍 ${esc(i.loc.name)}</span>`:''}</div></div>
+      <div class="idea-meta">${i.category?`<span class="chip plain">${esc(i.category)}</span>`:''}${i.loc?`<span>📍 ${esc(labelOf(i.loc))}</span>`:''}</div></div>
       ${done?`<span class="done-badge">✓ ${done===1?'done':done+'×'}</span>`:''}</div>`;
   }).join('');
   return `<h1 class="screen-title">Date ideas</h1><p class="screen-sub">${S.ideas.length} idea${S.ideas.length===1?'':'s'} and counting</p>
@@ -484,7 +509,7 @@ function openIdea(id){
    <div class="sheet-body">
      ${i.category?`<span class="chip plain">${esc(i.category)}</span>`:''}
      ${i.desc?`<p style="margin:10px 0 4px;white-space:pre-wrap">${esc(i.desc)}</p>`:''}
-     ${i.loc?`<div class="section-title">📍 ${esc(i.loc.name)}</div>${i.loc.addr&&i.loc.addr!==i.loc.name?`<div class="hint" style="margin:-4px 0 6px">${esc(i.loc.addr)}</div>`:''}<div id="ideamap" class="map"></div>${extMapLinks(i.loc)}`:''}
+     ${i.loc?`<div class="section-title">📍 ${esc(labelOf(i.loc))}</div>${i.loc.addr&&i.loc.addr!==labelOf(i.loc)?`<div class="hint" style="margin:-4px 0 6px">${esc(i.loc.addr)}</div>`:''}<div id="ideamap" class="map"></div>${extMapLinks(i.loc)}`:''}
      <div class="section-title">Notes</div>
      ${noteBoxes('idea',id,i.notes)}
      ${done.length?`<div class="section-title">In the journal</div>`+done.map(d=>`<div class="card mem-card" onclick="openDate('${d.id}')"><span class="mem-day">${fmtDay(d.day)}</span><div class="mem-title">${esc(d.title)}</div></div>`).join(''):''}
@@ -502,7 +527,7 @@ function delIdea(id){
 let F=null;
 function openIdeaForm(id){
   const i=id?S.ideas.find(x=>x.id===id):null;
-  F={locs:i&&i.loc?[{...i.loc}]:[],max:1};
+  F={locs:i&&i.loc?[{...i.loc,name:labelOf(i.loc)}]:[],max:1};
   openOverlay(`
    <div class="sheet-head"><button class="hbtn subtle" onclick="closeTop()">Cancel</button><h2>${i?'Edit idea':'New idea'}</h2><button class="hbtn" onclick="saveIdea('${id||''}')">Save</button></div>
    <div class="sheet-body">
@@ -516,6 +541,7 @@ function openIdeaForm(id){
 function saveIdea(id){
   const title=$('f-title').value.trim();if(!title)return toast('Give it a title');
   const data={title,category:$('f-cat').value,desc:$('f-desc').value.trim(),loc:F.locs[0]||null};
+  savePlaces(F.locs);
   const p=id?db.collection('ideas').doc(id).set(data,{merge:true}):db.collection('ideas').add({...data,notes:{A:'',B:''},created:Date.now()});
   p.then(()=>{closeTop();if(id){closeTop();openIdea(id)}toast('Saved ✓')});
 }
@@ -524,7 +550,7 @@ function saveIdea(id){
 let pickMap=null;
 function locPickerHTML(){return `<div id="locwrap" class="loc-list"></div>
  ${F&&F.showAddr?'<div id="loc-addr" class="hint" style="margin:0 0 8px" hidden></div>':''}
- <div class="searchrow"><input id="loc-q" placeholder="Search a place or address" onkeydown="if(event.key==='Enter'){event.preventDefault();locSearch()}"><button onclick="locSearch()">Search</button></div>
+ <div class="searchrow"><input id="loc-q" placeholder="Search a place or address" oninput="locSuggest()" onkeydown="if(event.key==='Enter'){event.preventDefault();locSearch()}"><button onclick="locSearch()">Search</button></div>
  <div id="loc-results" class="results"></div>
  <div class="hint">Search above, or tap the map to drop a pin.</div>
  <div id="pickmap" class="map" style="height:180px;margin-top:8px"></div>`}
@@ -542,7 +568,7 @@ function drawLocPicker(){
       +(home?'':`<button class="x" title="Rename" onclick="renameLoc(${ix})">✏️</button>`)
       +(F.max>1&&F.locs.length>1?`<button class="x" onclick="mvLoc(${ix},-1)" ${ix===0?'disabled style="opacity:.25"':''}>▲</button><button class="x" onclick="mvLoc(${ix},1)" ${ix===F.locs.length-1?'disabled style="opacity:.25"':''}>▼</button>`:'')
       +`<button class="x" onclick="rmLoc(${ix})">✕</button></div>`;
-  }).join('')+((!home&&F.locs.length)?`<div class="hint" style="margin-top:0">Tap ✏️ to name a stop something you'll recognise later.</div>`:'');
+  }).join('')+((!home&&F.locs.length)?`<div class="hint" style="margin-top:0">Tap ✏️ to name a stop something you'll recognize later.</div>`:'');
   setTimeout(()=>{
     const el=$('pickmap');if(!el)return;
     if(pickMap){try{pickMap.remove()}catch(e){}pickMap=null}
@@ -594,8 +620,11 @@ function renameLoc(ix){
   const name=v.trim();
   if(!name)return toast('A stop needs a name');
   l.name=name;drawLocPicker();
+  const k=placeKey(l),used=knownPlaces().some(p=>placeKey(p)===k);
+  if(used)toast('Saving will rename this spot everywhere you\'ve logged it',2600);
 }
 function addLoc(l){
+  if(l&&l.lat!=null)l.name=labelOf(l); // reuse the label this place already has
   if(F.max===1)F.locs=[l];
   else if(F.locs.length>=F.max)return toast('That’s a lot of stops! (max '+F.max+')');
   else F.locs.push(l);
@@ -624,17 +653,31 @@ async function searchPlaces(q){
   const js=await r.json();
   return js.map(p=>({name:shortName(p.display_name),lat:+p.lat,lng:+p.lon,addr:fmtAddr(p.address,p.display_name)}));
 }
+function placeBtn(p,tag){
+  const l={name:p.name,lat:p.lat,lng:p.lng,addr:p.addr||null};
+  const payload=JSON.stringify(l).replace(/'/g,'&#39;').replace(/"/g,'&quot;');
+  return `<button onclick='addLoc(JSON.parse(this.dataset.l))' data-l="${payload}">📍 ${esc(p.name)}`
+    +`${p.addr&&p.addr!==p.name?`<span style="color:var(--muted)"> · ${esc(p.addr)}</span>`:''}`
+    +`${tag?`<span style="color:var(--teal);font-weight:700"> · ${tag}</span>`:''}</button>`;
+}
+// typing alone surfaces spots you've already used — by label or by address — so a place
+// you've been can be re-entered without going near the network
+function locSuggest(){
+  const el=$('loc-results');if(!el)return;
+  const m=matchPlaces($('loc-q').value);
+  el.innerHTML=m.map(p=>placeBtn(p,'been here')).join('');
+}
 async function locSearch(){
   const q=$('loc-q').value.trim();if(!q)return;
-  $('loc-results').innerHTML='<div class="hint">Searching…</div>';
+  const known=matchPlaces(q),head=known.map(p=>placeBtn(p,'been here')).join('');
+  $('loc-results').innerHTML=head+'<div class="hint">Searching…</div>';
   try{
     const results=await searchPlaces(q);
-    $('loc-results').innerHTML=results.length?results.map(p=>{
-      const l={name:p.name,lat:p.lat,lng:p.lng,addr:p.addr||null};
-      const payload=JSON.stringify(l).replace(/'/g,'&#39;').replace(/"/g,'&quot;');
-      return `<button onclick='addLoc(JSON.parse(this.dataset.l))' data-l="${payload}">📍 ${esc(p.name)}${p.addr&&p.addr!==p.name?`<span style="color:var(--muted)"> · ${esc(p.addr)}</span>`:''}</button>`;
-    }).join(''):'<div class="hint">No results — try adding the city or neighborhood.</div>';
-  }catch(e){$('loc-results').innerHTML='<div class="hint">Search failed — check your connection.</div>'}
+    const seen=new Set(known.map(placeKey));
+    const fresh=results.filter(p=>!seen.has(placeKey(p)));
+    $('loc-results').innerHTML=head+(fresh.length?fresh.map(p=>placeBtn(p)).join('')
+      :(known.length?'':'<div class="hint">No results — try adding the city or neighborhood.</div>'));
+  }catch(e){$('loc-results').innerHTML=head+'<div class="hint">Search failed — check your connection.</div>'}
 }
 // ══════════ journal ══════════
 // the album is paged by month, sharing S.cal with the calendar so switching views keeps
@@ -664,7 +707,7 @@ function journalView(){
     return `<div class="card mem-card" onclick="openDate('${d.id}')">
       <span class="mem-day">${fmtDay(d.day)}${d.time?' · '+fmtTime(d.time):''}</span>
       <div class="mem-title">${esc(d.title)}</div>
-      ${(d.locs||[]).length?`<div class="idea-meta">📍 ${(d.locs||[]).map(l=>esc(l.name)).join(' → ')}</div>`:''}
+      ${(d.locs||[]).length?`<div class="idea-meta">📍 ${(d.locs||[]).map(l=>esc(labelOf(l))).join(' → ')}</div>`:''}
       ${ph.length?`<div class="thumbstrip">${ph.slice(0,8).map(p=>`<img src="${p.thumb}">`).join('')}</div>`:''}
       ${ph.length?`<div class="mem-icons">📷 ${ph.length}</div>`:''}</div>`;
   }).join('')||`<div class="empty">Nothing logged this month.<br>Use ‹ › to browse the months you have memories in.</div>`;
@@ -726,7 +769,7 @@ function calTap(ds){
 function openDateForm(id,ideaId){
   const d=id?S.dates.find(x=>x.id===id):null;
   const idea=ideaId?S.ideas.find(x=>x.id===ideaId):null;
-  F={locs:d?(d.locs||[]).map(l=>({...l})):(idea&&idea.loc?[{...idea.loc}]:[]),max:8};
+  F={locs:d?(d.locs||[]).map(l=>({...l,name:labelOf(l)})):(idea&&idea.loc?[{...idea.loc,name:labelOf(idea.loc)}]:[]),max:8};
   openOverlay(`
    <div class="sheet-head"><button class="hbtn subtle" onclick="closeTop()">Cancel</button><h2>${d?'Edit memory':'Log a date'}</h2><button class="hbtn" onclick="saveDate('${id||''}')">Save</button></div>
    <div class="sheet-body">
@@ -744,6 +787,7 @@ function saveDate(id){
   const title=$('f-title').value.trim();if(!title)return toast('Give it a title');
   const day=$('f-day').value;if(!day)return toast('Pick the day');
   const data={title,day,time:$('f-time').value||'',ideaId:$('f-idea').value||null,locs:F.locs};
+  savePlaces(F.locs);
   if(id)db.collection('dates').doc(id).set(data,{merge:true}).then(()=>{closeTop();closeTop();openDate(id);toast('Saved ✓')});
   else db.collection('dates').add({...data,refl:{A:'',B:''},created:Date.now()}).then(r=>{closeAll();openDate(r.id);toast('Logged! Now add photos & thoughts',2600)});
 }
@@ -761,7 +805,7 @@ function openDate(id){
      <span class="mem-day">${fmtDay(d.day)}${d.time?' · '+fmtTime(d.time):''}</span>
      ${idea?`<div style="margin-top:6px"><span class="chip" onclick="openIdea('${idea.id}')">💡 ${esc(idea.title)}</span></div>`:''}
      ${locs.length?`<div class="section-title">${locs.length>1?'Our route that day':'Where'}</div><div id="datemap" class="map"></div>
-       <div class="loc-list" style="margin-top:8px">${locs.map((l,ix)=>`<div class="loc-row">${locs.length>1?`<span class="n">${ix+1}</span>`:'📍'}<span class="grow${l.addr&&l.addr!==l.name?' two':''}"><span class="loc-name">${esc(l.name)}</span>${l.addr&&l.addr!==l.name?`<span class="loc-sub">${esc(l.addr)}</span>`:''}</span></div>`).join('')}</div>`:''}
+       <div class="loc-list" style="margin-top:8px">${locs.map((l,ix)=>`<div class="loc-row">${locs.length>1?`<span class="n">${ix+1}</span>`:'📍'}<span class="grow${l.addr&&l.addr!==labelOf(l)?' two':''}"><span class="loc-name">${esc(labelOf(l))}</span>${l.addr&&l.addr!==labelOf(l)?`<span class="loc-sub">${esc(l.addr)}</span>`:''}</span></div>`).join('')}</div>`:''}
      <div id="psec">${photoSectionHTML(id)}</div>
      <div class="section-title">Our thoughts</div>
      ${noteBoxes('date',id,d.refl)}
@@ -1175,14 +1219,14 @@ function drawBigMap(){
   const pts=homeMarkers(bigMap);
   if(bigShow.ideas)mappedIdeas().forEach(i=>{if(bigShow.cat==='all'||i.category===bigShow.cat){
     L.marker([i.loc.lat,i.loc.lng],{icon:L.divIcon({className:'',html:'<div class="idea-pin"></div>',iconSize:[0,0]})}).addTo(bigMap)
-     .bindPopup(`<b>💡 ${esc(i.title)}</b><br>${esc(i.loc.name)}${i.category?`<br><span class="chip plain">${esc(i.category)}</span>`:''}${extMapLinks(i.loc)}`);
+     .bindPopup(`<b>💡 ${esc(i.title)}</b><br>${esc(labelOf(i.loc))}${i.category?`<br><span class="chip plain">${esc(i.category)}</span>`:''}${extMapLinks(i.loc)}`);
     pts.push([i.loc.lat,i.loc.lng]);
   }});
   // one pin per unique memory location; its popup flashes back to the entry (or a list)
   bigMemGroups={};
   if(bigShow.mems)liveDates().forEach(d=>(d.locs||[]).forEach(l=>{
-    const key=l.lat+','+l.lng;
-    const g=bigMemGroups[key]=bigMemGroups[key]||{name:l.name,lat:l.lat,lng:l.lng,ids:[]};
+    const key=placeKey(l);
+    const g=bigMemGroups[key]=bigMemGroups[key]||{name:labelOf(l),lat:l.lat,lng:l.lng,ids:[]};
     if(!g.ids.includes(d.id))g.ids.push(d.id);
   }));
   Object.entries(bigMemGroups).forEach(([key,g])=>{
