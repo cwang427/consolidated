@@ -372,11 +372,41 @@ function openOverlay(inner){
 }
 function closeTop(){const el=overlayStack.pop();if(el){el.remove();unlockScroll()}}
 // grow a textarea to fit its content: a nested scrollbar in a 70px box makes both
-// reading a long reflection and keeping track of what you've typed needlessly hard
-function autoGrow(el){
+// reading a long reflection and keeping track of what you've typed needlessly hard.
+//
+// Measuring requires collapsing the field to 'auto' first, which briefly shortens the
+// sheet and makes the browser clamp its scrollTop — that clamp was what yanked the view
+// back mid-sentence. Save the position across the measurement, then move only if the
+// caret would otherwise be off-screen, and only far enough to show it.
+function caretOffset(el){
+  const st=getComputedStyle(el),m=document.createElement('div');
+  ['fontFamily','fontSize','fontWeight','fontStyle','lineHeight','letterSpacing','textTransform',
+   'paddingTop','paddingLeft','paddingRight'].forEach(k=>{m.style[k]=st[k]});
+  m.style.cssText+=';position:absolute;left:-9999px;top:0;visibility:hidden;white-space:pre-wrap;word-wrap:break-word';
+  m.style.width=el.clientWidth+'px';
+  m.textContent=el.value.slice(0,el.selectionEnd);
+  const dot=document.createElement('span');dot.textContent='\u200b';m.appendChild(dot);
+  document.body.appendChild(m);
+  const y=dot.offsetTop;
+  m.remove();
+  return y;
+}
+function caretIntoView(el,box){
+  const lh=parseFloat(getComputedStyle(el).lineHeight)||20,pad=10;
+  const er=el.getBoundingClientRect(),br=box.getBoundingClientRect();
+  const top=er.top+caretOffset(el),bot=top+lh;
+  if(bot>br.bottom-pad)box.scrollTop+=bot-(br.bottom-pad);
+  else if(top<br.top+pad)box.scrollTop-=(br.top+pad)-top;
+}
+function autoGrow(el,follow){
   if(!el)return;
+  const box=el.closest('.sheet-body');
+  const keep=box?box.scrollTop:0;
   el.style.height='auto';
   el.style.height=(el.scrollHeight+el.offsetHeight-el.clientHeight)+'px';
+  if(!box)return;
+  if(box.scrollTop!==keep)box.scrollTop=keep; // undo the clamp our own measurement caused
+  if(follow)caretIntoView(el,box);
 }
 function growAll(root){(root||document).querySelectorAll('.sheet textarea').forEach(autoGrow)}
 function closeAll(){while(overlayStack.length)closeTop()}
@@ -421,7 +451,7 @@ function noteBoxes(kind,id,notes){
   return ['A','B'].map(k=>{
     const mine=k===S.me,v=(notes&&notes[k])||'';
     return `<div class="note-box"><div class="who"><span class="dot${k}"></span>${esc(pname(k))}${mine?' (you)':''}</div>
-    ${mine?`<textarea id="nb-${kind}-${k}" placeholder="${kind==='idea'?'Details, links, cravings, dreams…':'What do you remember? How did it feel?'}" oninput="autoGrow(this)" onblur="saveNote('${kind}','${id}','${k}')">${esc(v)}</textarea>`
+    ${mine?`<textarea id="nb-${kind}-${k}" placeholder="${kind==='idea'?'Details, links, cravings, dreams…':'What do you remember? How did it feel?'}" oninput="autoGrow(this,true)" onblur="saveNote('${kind}','${id}','${k}')">${esc(v)}</textarea>`
           :`<div class="ro ${v?'':'dim'}">${v?esc(v):'Nothing written yet'}</div>`}</div>`;
   }).join('');
 }
@@ -533,7 +563,7 @@ function openIdeaForm(id){
    <div class="sheet-body">
      <label>Title</label><input id="f-title" value="${esc(i?i.title:'')}" placeholder="Picnic at the botanical garden">
      <label>Category</label><select id="f-cat">${CATS.map(c=>`<option ${i&&i.category===c?'selected':''}>${c}</option>`).join('')}</select>
-     <label>Details</label><textarea id="f-desc" placeholder="Anything worth remembering…" oninput="autoGrow(this)">${esc(i?i.desc:'')}</textarea>
+     <label>Details</label><textarea id="f-desc" placeholder="Anything worth remembering…" oninput="autoGrow(this,true)">${esc(i?i.desc:'')}</textarea>
      <label>Location</label>${locPickerHTML()}
    </div>`);
   drawLocPicker();
