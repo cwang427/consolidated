@@ -253,7 +253,14 @@ const otherOf=k=>k==='A'?'B':'A';
 // dots would read as nested field paths in Firestore. `meta/places` maps that key to the
 // couple's chosen label, so naming a place once names it everywhere it appears.
 const placeKey=l=>`${Math.round(l.lat*1e5)}_${Math.round(l.lng*1e5)}`;
-const labelOf=l=>(l&&l.lat!=null&&S.places[placeKey(l)])||(l&&l.name)||'';
+// the two home bases are named places too — dates happen at home
+function homePlaces(){
+  return ((S.settings&&S.settings.homes)||[]).filter(h=>h&&h.lat!=null)
+    .map(h=>({name:h.label||'Home',addr:h.addr||'',lat:h.lat,lng:h.lng,tag:'home'}));
+}
+const homeLabel=k=>{const h=homePlaces().find(p=>placeKey(p)===k);return h?h.name:''};
+// an explicit rename wins; otherwise a home base names itself; otherwise the stored name
+const labelOf=l=>(l&&l.lat!=null&&(S.places[placeKey(l)]||homeLabel(placeKey(l))))||(l&&l.name)||'';
 function savePlaces(locs){
   const upd={};
   (locs||[]).forEach(l=>{if(l&&l.lat!=null&&l.name&&S.places[placeKey(l)]!==l.name)upd[placeKey(l)]=l.name});
@@ -263,7 +270,8 @@ function savePlaces(locs){
 function knownPlaces(){
   const out=new Map();
   const add=l=>{if(!l||l.lat==null)return;const k=placeKey(l);
-    if(!out.has(k))out.set(k,{name:labelOf(l),addr:l.addr||'',lat:l.lat,lng:l.lng})};
+    if(!out.has(k))out.set(k,{name:labelOf(l),addr:l.addr||'',lat:l.lat,lng:l.lng,tag:'been here'})};
+  homePlaces().forEach(h=>out.set(placeKey(h),{...h,name:labelOf(h)}));
   S.ideas.forEach(i=>add(i.loc));
   liveDates().forEach(d=>(d.locs||[]).forEach(add));
   return [...out.values()];
@@ -728,11 +736,11 @@ function placeBtn(p,tag){
 function locSuggest(){
   const el=$('loc-results');if(!el)return;
   const m=matchPlaces($('loc-q').value);
-  el.innerHTML=m.map(p=>placeBtn(p,'been here')).join('');
+  el.innerHTML=m.map(p=>placeBtn(p,p.tag||'been here')).join('');
 }
 async function locSearch(){
   const q=$('loc-q').value.trim();if(!q)return;
-  const known=matchPlaces(q),head=known.map(p=>placeBtn(p,'been here')).join('');
+  const known=matchPlaces(q),head=known.map(p=>placeBtn(p,p.tag||'been here')).join('');
   $('loc-results').innerHTML=head+'<div class="hint">Searching…</div>';
   try{
     const results=await searchPlaces(q);
