@@ -159,6 +159,9 @@ input[type=range]{padding:0;border:none;background:none;accent-color:var(--rose)
 .loc-row{display:flex;align-items:center;gap:8px;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:8px 12px;margin-bottom:6px;font-size:14px}
 .loc-row .n{width:22px;height:22px;border-radius:50%;background:var(--rose);color:#fff;font-size:12px;font-weight:800;display:flex;align-items:center;justify-content:center;flex-shrink:0}
 .loc-row .grow{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.loc-row .grow.two{white-space:normal}
+.loc-name{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.loc-sub{display:block;font-size:12px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .loc-row .x{color:var(--muted);font-size:18px;padding:2px 6px}
 .searchrow{display:flex;gap:8px}
 .searchrow button{background:var(--plum);color:#fff;border-radius:12px;padding:0 16px;font-weight:700;flex-shrink:0}
@@ -481,7 +484,7 @@ function openIdea(id){
    <div class="sheet-body">
      ${i.category?`<span class="chip plain">${esc(i.category)}</span>`:''}
      ${i.desc?`<p style="margin:10px 0 4px;white-space:pre-wrap">${esc(i.desc)}</p>`:''}
-     ${i.loc?`<div class="section-title">📍 ${esc(i.loc.name)}</div><div id="ideamap" class="map"></div>${extMapLinks(i.loc)}`:''}
+     ${i.loc?`<div class="section-title">📍 ${esc(i.loc.name)}</div>${i.loc.addr&&i.loc.addr!==i.loc.name?`<div class="hint" style="margin:-4px 0 6px">${esc(i.loc.addr)}</div>`:''}<div id="ideamap" class="map"></div>${extMapLinks(i.loc)}`:''}
      <div class="section-title">Notes</div>
      ${noteBoxes('idea',id,i.notes)}
      ${done.length?`<div class="section-title">In the journal</div>`+done.map(d=>`<div class="card mem-card" onclick="openDate('${d.id}')"><span class="mem-day">${fmtDay(d.day)}</span><div class="mem-title">${esc(d.title)}</div></div>`).join(''):''}
@@ -527,8 +530,19 @@ function locPickerHTML(){return `<div id="locwrap" class="loc-list"></div>
  <div id="pickmap" class="map" style="height:180px;margin-top:8px"></div>`}
 function drawLocPicker(){
   const wrap=$('locwrap');if(!wrap)return;
-  // the home picker's Location row shows the street address (the label holds the nickname)
-  wrap.innerHTML=F.locs.map((l,ix)=>`<div class="loc-row">${F.max>1?`<span class="n">${ix+1}</span>`:'📍'}<span class="grow">${esc(F.showAddr&&l.addr?l.addr:l.name)}</span>${F.max>1&&F.locs.length>1?`<button class="x" onclick="mvLoc(${ix},-1)" ${ix===0?'disabled style="opacity:.25"':''}>▲</button><button class="x" onclick="mvLoc(${ix},1)" ${ix===F.locs.length-1?'disabled style="opacity:.25"':''}>▼</button>`:''}<button class="x" onclick="rmLoc(${ix})">✕</button></div>`).join('');
+  // The home picker keeps the street address on its row (its nickname lives in the Label
+  // field above). Everywhere else each stop carries its own editable label, with the
+  // address underneath so you can tell what you actually picked.
+  const home=!!F.showAddr;
+  wrap.innerHTML=F.locs.map((l,ix)=>{
+    const body=home
+      ? `<span class="grow">${esc(l.addr||l.name)}</span>`
+      : `<span class="grow${l.addr&&l.addr!==l.name?' two':''}"><span class="loc-name">${esc(l.name)}</span>${l.addr&&l.addr!==l.name?`<span class="loc-sub">${esc(l.addr)}</span>`:''}</span>`;
+    return `<div class="loc-row">${F.max>1?`<span class="n">${ix+1}</span>`:'📍'}${body}`
+      +(home?'':`<button class="x" title="Rename" onclick="renameLoc(${ix})">✏️</button>`)
+      +(F.max>1&&F.locs.length>1?`<button class="x" onclick="mvLoc(${ix},-1)" ${ix===0?'disabled style="opacity:.25"':''}>▲</button><button class="x" onclick="mvLoc(${ix},1)" ${ix===F.locs.length-1?'disabled style="opacity:.25"':''}>▼</button>`:'')
+      +`<button class="x" onclick="rmLoc(${ix})">✕</button></div>`;
+  }).join('')+((!home&&F.locs.length)?`<div class="hint" style="margin-top:0">Tap ✏️ to name a stop something you'll recognise later.</div>`:'');
   setTimeout(()=>{
     const el=$('pickmap');if(!el)return;
     if(pickMap){try{pickMap.remove()}catch(e){}pickMap=null}
@@ -573,6 +587,14 @@ async function updateLocAddr(){
 }
 function rmLoc(ix){F.locs.splice(ix,1);drawLocPicker()}
 function mvLoc(ix,n){const t=F.locs.splice(ix,1)[0];F.locs.splice(ix+n,0,t);drawLocPicker()}
+function renameLoc(ix){
+  const l=F.locs[ix];if(!l)return;
+  const v=prompt('Call this stop:',l.name||'');
+  if(v===null)return;                       // cancelled — keep what was there
+  const name=v.trim();
+  if(!name)return toast('A stop needs a name');
+  l.name=name;drawLocPicker();
+}
 function addLoc(l){
   if(F.max===1)F.locs=[l];
   else if(F.locs.length>=F.max)return toast('That’s a lot of stops! (max '+F.max+')');
@@ -608,8 +630,7 @@ async function locSearch(){
   try{
     const results=await searchPlaces(q);
     $('loc-results').innerHTML=results.length?results.map(p=>{
-      const l={name:p.name,lat:p.lat,lng:p.lng};
-      if(F&&F.showAddr)l.addr=p.addr||null;
+      const l={name:p.name,lat:p.lat,lng:p.lng,addr:p.addr||null};
       const payload=JSON.stringify(l).replace(/'/g,'&#39;').replace(/"/g,'&quot;');
       return `<button onclick='addLoc(JSON.parse(this.dataset.l))' data-l="${payload}">📍 ${esc(p.name)}${p.addr&&p.addr!==p.name?`<span style="color:var(--muted)"> · ${esc(p.addr)}</span>`:''}</button>`;
     }).join(''):'<div class="hint">No results — try adding the city or neighborhood.</div>';
@@ -740,7 +761,7 @@ function openDate(id){
      <span class="mem-day">${fmtDay(d.day)}${d.time?' · '+fmtTime(d.time):''}</span>
      ${idea?`<div style="margin-top:6px"><span class="chip" onclick="openIdea('${idea.id}')">💡 ${esc(idea.title)}</span></div>`:''}
      ${locs.length?`<div class="section-title">${locs.length>1?'Our route that day':'Where'}</div><div id="datemap" class="map"></div>
-       <div class="loc-list" style="margin-top:8px">${locs.map((l,ix)=>`<div class="loc-row">${locs.length>1?`<span class="n">${ix+1}</span>`:'📍'}<span class="grow">${esc(l.name)}</span></div>`).join('')}</div>`:''}
+       <div class="loc-list" style="margin-top:8px">${locs.map((l,ix)=>`<div class="loc-row">${locs.length>1?`<span class="n">${ix+1}</span>`:'📍'}<span class="grow${l.addr&&l.addr!==l.name?' two':''}"><span class="loc-name">${esc(l.name)}</span>${l.addr&&l.addr!==l.name?`<span class="loc-sub">${esc(l.addr)}</span>`:''}</span></div>`).join('')}</div>`:''}
      <div id="psec">${photoSectionHTML(id)}</div>
      <div class="section-title">Our thoughts</div>
      ${noteBoxes('date',id,d.refl)}
