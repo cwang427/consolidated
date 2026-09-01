@@ -135,6 +135,10 @@ label{display:block;font-size:13px;font-weight:700;color:var(--plum);margin:14px
 .photo-grid img{width:100%;aspect-ratio:1;object-fit:cover;border-radius:10px;cursor:pointer}
 .add-photo{aspect-ratio:1;border:2px dashed var(--line);border-radius:10px;display:flex;flex-direction:column;align-items:center;justify-content:center;color:var(--muted);font-size:12px;font-weight:700;gap:2px;cursor:pointer}
 .add-photo .plus{font-size:24px;color:var(--rose)}
+.ph-cell{position:relative}
+.ph-badge{position:absolute;right:5px;bottom:5px;background:rgba(61,44,51,.72);color:#fff;font-size:10px;font-weight:800;padding:2px 7px;border-radius:99px;pointer-events:none}
+input[type=range]{padding:0;border:none;background:none;accent-color:var(--rose)}
+#clip-v{width:100%;border-radius:14px;background:#000;display:block}
 .arr-cell{position:relative}
 .arr-cell img{width:100%;aspect-ratio:1;object-fit:cover;border-radius:10px;display:block}
 .arr-bar{position:absolute;left:0;right:0;bottom:0;display:flex;background:rgba(61,44,51,.6);border-radius:0 0 10px 10px}
@@ -145,7 +149,7 @@ label{display:block;font-size:13px;font-weight:700;color:var(--plum);margin:14px
 .arrange-btn{font-size:12.5px;font-weight:800;color:var(--rose-dark)}
 #viewer{position:fixed;inset:0;background:rgba(20,10,14,.96);z-index:700;display:flex;flex-direction:column}
 #viewer .v-img{flex:1;display:flex;align-items:center;justify-content:center;min-height:0;touch-action:none;overflow:hidden}
-#viewer img{max-width:100%;max-height:100%;object-fit:contain;will-change:transform}
+#viewer img,#viewer video{max-width:100%;max-height:100%;object-fit:contain;will-change:transform}
 #viewer .v-bar{display:flex;justify-content:space-between;align-items:center;padding:12px 18px calc(14px + var(--safe-b));color:#fff}
 #viewer .v-bar button{font-size:15px;font-weight:700;color:#fff;padding:8px 14px}
 #viewer .v-close{position:absolute;top:14px;right:14px;color:#fff;font-size:26px;padding:8px;z-index:2}
@@ -203,7 +207,7 @@ hr{border:none;border-top:1px solid var(--line);margin:18px 0}
 </nav>
 <button id="fab" hidden onclick="fabTap()">+</button>
 <div id="toast"></div>
-<input type="file" id="photoInput" accept="image/*" multiple hidden>
+<input type="file" id="photoInput" accept="image/*,video/*" multiple hidden>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
@@ -775,11 +779,13 @@ function photoGridHTML(dateId){
   if(arrangeMode)return ph.map((p,ix)=>{
     const isCover=d&&(d.coverId?d.coverId===p.id:ix===0);
     return `<div class="arr-cell"><img src="${p.thumb}">
-      ${isCover?'<span class="cov-badge">★ cover</span>':''}
+      ${isCover?'<span class="cov-badge">★ cover</span>':''}${p.kind==='clip'?'<span class="ph-badge">▶ 1s</span>':''}
       <div class="arr-bar"><button onclick="movePhoto('${dateId}',${ix},-1)" ${ix===0?'disabled':''}>‹</button><button class="${isCover?'on':''}" onclick="setCover('${dateId}','${p.id}')">★</button><button onclick="movePhoto('${dateId}',${ix},1)" ${ix===ph.length-1?'disabled':''}>›</button></div></div>`;
   }).join('');
-  return ph.map((p,ix)=>`<img src="${p.thumb}" onclick="openViewer('${dateId}',${ix})">`).join('')
-   +`<div class="add-photo" onclick="pickPhotos('${dateId}')"><span class="plus">＋</span>Add photos</div>`;
+  return ph.map((p,ix)=>p.kind==='clip'
+    ?`<div class="ph-cell" onclick="openViewer('${dateId}',${ix})"><img src="${p.thumb}"><span class="ph-badge">▶ 1s</span></div>`
+    :`<img src="${p.thumb}" onclick="openViewer('${dateId}',${ix})">`).join('')
+   +`<div class="add-photo" onclick="pickPhotos('${dateId}')"><span class="plus">＋</span>Add photos or clip</div>`;
 }
 function refreshPhotoGrid(){
   if(!curDateId)return;
@@ -822,6 +828,120 @@ async function compressPhoto(file){
   while(full.length>930000&&dim>640){dim=Math.round(dim*0.8);full=drawScaled(bmp,dim,q)}
   const thumb=drawScaled(bmp,400,0.68);
   return {full,thumb};
+}
+
+// ══════════ video → 1s silent loop ══════════
+// Videos never reach Firestore: the file is decoded locally, one second of it is redrawn
+// through a canvas and re-encoded small enough to fit a single doc, and only that is saved.
+const CLIP_MS=1000,CLIP_FPS=12,CLIP_DIM=1080,CLIP_DIMS=[1080,720,540],MIN_CLIP=4000;
+const blobToDataURL=b=>new Promise(r=>{const fr=new FileReader();fr.onload=()=>r(fr.result);fr.readAsDataURL(b)});
+// mp4 first so iPhones produce H.264 that plays everywhere; webm covers the rest
+function clipMimes(){
+  return ['video/mp4','video/webm;codecs=vp9','video/webm;codecs=vp8','video/webm']
+    .filter(m=>window.MediaRecorder&&MediaRecorder.isTypeSupported(m));
+}
+const clipMime=()=>clipMimes()[0]||'';
+// record a canvas in real time; onFrame redraws it each animation frame
+async function recordCanvas(canvas,ms,fps,bps,onFrame,mime){
+  mime=mime||clipMime();if(!mime)throw new Error('no recorder');
+  const stream=canvas.captureStream(fps);
+  const rec=new MediaRecorder(stream,{mimeType:mime,videoBitsPerSecond:bps});
+  const chunks=[];rec.ondataavailable=e=>{if(e.data&&e.data.size)chunks.push(e.data)};
+  const stopped=new Promise(r=>{rec.onstop=r});
+  rec.start();
+  const t0=performance.now();
+  await new Promise(res=>{
+    const step=()=>{const el=performance.now()-t0;if(onFrame)onFrame();if(el>=ms)return res();requestAnimationFrame(step)};
+    requestAnimationFrame(step);
+  });
+  rec.stop();await stopped;
+  stream.getTracks().forEach(t=>t.stop());
+  return blobToDataURL(new Blob(chunks,{type:mime}));
+}
+const evenTo=n=>Math.max(2,Math.round(n/2)*2);
+// Some encoders accept a format/resolution and then emit nothing at all (Chromium's mp4
+// encoder does this at 1080p). A zero-byte recording would sail past the size check and
+// save a broken clip, so every recording is validated and we step down through
+// format/resolution until one actually returns data — remembering what worked.
+let clipEncoder=null;
+async function recordClipOnce(v,start,dim,bps,mime){
+  const sc=Math.min(1,dim/Math.max(v.videoWidth,v.videoHeight));
+  const c=document.createElement('canvas');
+  c.width=evenTo(v.videoWidth*sc);c.height=evenTo(v.videoHeight*sc);
+  const ctx=c.getContext('2d'),draw=()=>ctx.drawImage(v,0,0,c.width,c.height);
+  v.pause();v.currentTime=start;
+  await new Promise(r=>{const h=()=>{v.removeEventListener('seeked',h);r()};v.addEventListener('seeked',h)});
+  draw();
+  const thumb=drawScaled(c,400,0.68); // poster frame keeps grids and covers working
+  try{await v.play()}catch(e){}
+  const full=await recordCanvas(c,CLIP_MS,CLIP_FPS,bps,draw,mime);
+  v.pause();
+  return {full,thumb};
+}
+async function compressClip(v,start){
+  const combos=[];
+  if(clipEncoder)combos.push(clipEncoder); // whatever worked last time, first
+  for(const mime of clipMimes())for(const dim of CLIP_DIMS)
+    if(!clipEncoder||mime!==clipEncoder.mime||dim!==clipEncoder.dim)combos.push({mime,dim});
+  let thumb=null,tries=0;
+  for(const {mime,dim} of combos){
+    let bps=3000000;
+    for(let t=0;t<3&&tries<6;t++){
+      tries++;
+      const r=await recordClipOnce(v,start,dim,bps,mime);
+      thumb=thumb||r.thumb;
+      if(r.full.length<MIN_CLIP)break;                    // silent here — try a smaller size
+      if(r.full.length<=930000){clipEncoder={mime,dim};return {full:r.full,thumb}}
+      bps=Math.round(bps*0.6);                            // too big for one Firestore doc
+    }
+    if(tries>=6)break;
+  }
+  return null;
+}
+function openClipEditor(file,dateId){
+  return new Promise(resolve=>{
+    const url=URL.createObjectURL(file);
+    openOverlay(`<div class="sheet-head"><button class="hbtn subtle" onclick="clipCancel()">Cancel</button><h2>Trim to a 1s loop</h2><button class="hbtn" onclick="clipSave('${dateId}')">Save</button></div>
+     <div class="sheet-body">
+       <video id="clip-v" src="${url}" muted playsinline></video>
+       <label>Start point</label>
+       <input type="range" id="clip-start" min="0" max="0" step="0.1" value="0" oninput="clipSeek()">
+       <div class="hint" id="clip-info">Loading…</div>
+       <div class="hint">Silent, and loops forever. Only the trimmed second is saved — the original video never leaves your phone.</div>
+     </div>`);
+    CLIP={resolve:()=>{URL.revokeObjectURL(url);resolve()},busy:false};
+    const v=$('clip-v');
+    v.addEventListener('loadedmetadata',()=>{
+      $('clip-start').max=Math.max(0,(v.duration||0)-CLIP_MS/1000).toFixed(1);
+      clipSeek();
+    });
+    // keep the preview looping inside the chosen second
+    v.addEventListener('timeupdate',()=>{
+      const st=+$('clip-start').value;
+      if(v.currentTime>=st+CLIP_MS/1000||v.currentTime<st-0.05)v.currentTime=st;
+    });
+  });
+}
+function clipSeek(){
+  const v=$('clip-v');if(!v)return;
+  const st=+$('clip-start').value;
+  $('clip-info').textContent=`Starting at ${st.toFixed(1)}s of ${(v.duration||0).toFixed(1)}s`;
+  v.currentTime=st;v.play().catch(()=>{});
+}
+function clipCancel(){const c=CLIP;CLIP=null;closeTop();if(c)c.resolve()}
+async function clipSave(dateId){
+  if(!CLIP||CLIP.busy)return;
+  CLIP.busy=true;
+  const v=$('clip-v'),st=+$('clip-start').value;
+  toast('Making your loop…',30000);
+  try{
+    const out=await compressClip(v,st);
+    if(!out){CLIP.busy=false;return toast('That clip is too detailed to shrink — try a simpler moment',4000)}
+    const fr=await db.collection('photoFulls').add({data:out.full});
+    await db.collection('photos').add({dateId,thumb:out.thumb,fullId:fr.id,kind:'clip',created:Date.now()});
+    toast('Loop added ✓');
+  }catch(err){console.error(err);CLIP.busy=false;return toast('Could not make a loop from that video',3500)}
+  clipCancel();
 }
 
 // ══════════ fullscreen viewer ══════════
@@ -919,11 +1039,14 @@ function vWheel(e){
   vApplyZoom(false);
 }
 async function vShow(){
-  const p=V.list[V.ix];
+  const p=V.list[V.ix],box=document.querySelector('#viewer .v-img');
   $('v-count').textContent=`${V.ix+1} / ${V.list.length}`;
-  $('v-img').src=p.thumb;
+  // clips play as a silent loop; photos stay images (and keep pinch/pan)
+  const clip=p.kind==='clip';
+  box.innerHTML=clip?`<video id="v-img" autoplay loop muted playsinline poster="${p.thumb}"></video>`:`<img id="v-img">`;
+  if(!clip)$('v-img').src=p.thumb;
   if(!p._full){try{const d=await db.collection('photoFulls').doc(p.fullId).get();p._full=(d.data()||{}).data}catch(e){}}
-  if(V&&p._full&&V.list[V.ix]===p)$('v-img').src=p._full;
+  if(V&&p._full&&V.list[V.ix]===p&&$('v-img'))$('v-img').src=p._full;
 }
 function vNav(n){if(!V)return;V.ix=(V.ix+n+V.list.length)%V.list.length;vResetZoom();vShow()}
 function closeViewer(){const el=$('viewer');if(el)el.remove();V=null}
@@ -1061,17 +1184,20 @@ function configHelp(){return `<div class="hero"><div class="big"><span class="ca
 $('photoInput').addEventListener('change',async e=>{
   const files=[...e.target.files];
   if(!files.length||!photoTarget)return;
+  const target=photoTarget;
+  const vids=files.filter(f=>/^video\//.test(f.type)),imgs=files.filter(f=>!/^video\//.test(f.type));
   let ok=0;
-  for(let i=0;i<files.length;i++){
-    toast(`Uploading photo ${i+1} of ${files.length}…`,60000);
+  for(let i=0;i<imgs.length;i++){
+    toast(`Uploading photo ${i+1} of ${imgs.length}…`,60000);
     try{
-      const {full,thumb}=await compressPhoto(files[i]);
+      const {full,thumb}=await compressPhoto(imgs[i]);
       const fr=await db.collection('photoFulls').add({data:full});
-      await db.collection('photos').add({dateId:photoTarget,thumb,fullId:fr.id,created:Date.now()+i});
+      await db.collection('photos').add({dateId:target,thumb,fullId:fr.id,created:Date.now()+i});
       ok++;
     }catch(err){console.error(err)}
   }
-  toast(ok===files.length?(ok>1?`${ok} photos added ✓`:'Photo added ✓'):`${ok} of ${files.length} added — one photo format didn't work`);
+  if(imgs.length)toast(ok===imgs.length?(ok>1?`${ok} photos added ✓`:'Photo added ✓'):`${ok} of ${imgs.length} added — one photo format didn't work`);
+  for(const f of vids)await openClipEditor(f,target); // one trim sheet at a time
 });
 boot();
 render();
