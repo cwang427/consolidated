@@ -779,11 +779,11 @@ function photoGridHTML(dateId){
   if(arrangeMode)return ph.map((p,ix)=>{
     const isCover=d&&(d.coverId?d.coverId===p.id:ix===0);
     return `<div class="arr-cell"><img src="${p.thumb}">
-      ${isCover?'<span class="cov-badge">★ cover</span>':''}${p.kind==='clip'?'<span class="ph-badge">▶ 1s</span>':''}
+      ${isCover?'<span class="cov-badge">★ cover</span>':''}${p.kind==='clip'?`<span class="ph-badge">▶${p.secs?' '+p.secs+'s':''}</span>`:''}
       <div class="arr-bar"><button onclick="movePhoto('${dateId}',${ix},-1)" ${ix===0?'disabled':''}>‹</button><button class="${isCover?'on':''}" onclick="setCover('${dateId}','${p.id}')">★</button><button onclick="movePhoto('${dateId}',${ix},1)" ${ix===ph.length-1?'disabled':''}>›</button></div></div>`;
   }).join('');
   return ph.map((p,ix)=>p.kind==='clip'
-    ?`<div class="ph-cell" onclick="openViewer('${dateId}',${ix})"><img src="${p.thumb}"><span class="ph-badge">▶ 1s</span></div>`
+    ?`<div class="ph-cell" onclick="openViewer('${dateId}',${ix})"><img src="${p.thumb}"><span class="ph-badge">▶${p.secs?' '+p.secs+'s':''}</span></div>`
     :`<img src="${p.thumb}" onclick="openViewer('${dateId}',${ix})">`).join('')
    +`<div class="add-photo" onclick="pickPhotos('${dateId}')"><span class="plus">＋</span>Add photos or clip</div>`;
 }
@@ -833,7 +833,29 @@ async function compressPhoto(file){
 // ══════════ video → 1s silent loop ══════════
 // Videos never reach Firestore: the file is decoded locally, one second of it is redrawn
 // through a canvas and re-encoded small enough to fit a single doc, and only that is saved.
-const CLIP_MS=1000,CLIP_FPS=12,CLIP_DIM=1080,CLIP_DIMS=[1080,720,540],MIN_CLIP=4000;
+const CLIP_MAX_MS=3000,CLIP_MIN_MS=300,CLIP_FPS=12,CLIP_DIM=1080,CLIP_DIMS=[1080,720,540],MIN_CLIP=4000;
+// keep the encode roughly inside one Firestore doc whatever the length: ~525 KB of video
+// before base64 inflates it, never above the 3 Mbps we use for very short clips
+const clipBps=secs=>Math.min(3000000,Math.round(525000*8/Math.max(0.3,secs)));
+// hold the trim handles a sane distance apart: at least CLIP_MIN_MS, at most CLIP_MAX_MS,
+// and always inside the video. Dragging one handle pushes the other rather than blocking.
+function clipWindow(start,end,dur,which){
+  const MIN=CLIP_MIN_MS/1000,MAX=CLIP_MAX_MS/1000;
+  if(!(dur>0))return {start:0,end:0};
+  if(dur<=MIN)return {start:0,end:+dur.toFixed(1)};
+  start=Math.max(0,Math.min(start,dur));end=Math.max(0,Math.min(end,dur));
+  if(which==='end'){
+    if(start>end-MIN)start=end-MIN;
+    if(start<end-MAX)start=end-MAX;
+    if(start<0){start=0;end=Math.max(end,Math.min(dur,MIN))}
+  }else{
+    if(end<start+MIN)end=start+MIN;
+    if(end>start+MAX)end=start+MAX;
+    // ran off the end: pull the start handle back only as far as the minimum needs
+    if(end>dur){end=dur;start=Math.max(0,Math.min(start,end-MIN))}
+  }
+  return {start:+start.toFixed(1),end:+end.toFixed(1)};
+}
 const blobToDataURL=b=>new Promise(r=>{const fr=new FileReader();fr.onload=()=>r(fr.result);fr.readAsDataURL(b)});
 // mp4 first so iPhones produce H.264 that plays everywhere; webm covers the rest
 function clipMimes(){
@@ -864,7 +886,7 @@ const evenTo=n=>Math.max(2,Math.round(n/2)*2);
 // save a broken clip, so every recording is validated and we step down through
 // format/resolution until one actually returns data — remembering what worked.
 let clipEncoder=null;
-async function recordClipOnce(v,start,dim,bps,mime){
+async function recordClipOnce(v,start,ms,dim,bps,mime){
   const sc=Math.min(1,dim/Math.max(v.videoWidth,v.videoHeight));
   const c=document.createElement('canvas');
   c.width=evenTo(v.videoWidth*sc);c.height=evenTo(v.videoHeight*sc);
@@ -874,21 +896,22 @@ async function recordClipOnce(v,start,dim,bps,mime){
   draw();
   const thumb=drawScaled(c,400,0.68); // poster frame keeps grids and covers working
   try{await v.play()}catch(e){}
-  const full=await recordCanvas(c,CLIP_MS,CLIP_FPS,bps,draw,mime);
+  const full=await recordCanvas(c,ms,CLIP_FPS,bps,draw,mime);
   v.pause();
   return {full,thumb};
 }
-async function compressClip(v,start){
+async function compressClip(v,start,ms){
+  ms=Math.max(CLIP_MIN_MS,Math.min(CLIP_MAX_MS,ms||CLIP_MAX_MS));
   const combos=[];
   if(clipEncoder)combos.push(clipEncoder); // whatever worked last time, first
   for(const mime of clipMimes())for(const dim of CLIP_DIMS)
     if(!clipEncoder||mime!==clipEncoder.mime||dim!==clipEncoder.dim)combos.push({mime,dim});
   let thumb=null,tries=0;
   for(const {mime,dim} of combos){
-    let bps=3000000;
+    let bps=clipBps(ms/1000);
     for(let t=0;t<3&&tries<6;t++){
       tries++;
-      const r=await recordClipOnce(v,start,dim,bps,mime);
+      const r=await recordClipOnce(v,start,ms,dim,bps,mime);
       thumb=thumb||r.thumb;
       if(r.full.length<MIN_CLIP)break;                    // silent here — try a smaller size
       if(r.full.length<=930000){clipEncoder={mime,dim};return {full:r.full,thumb}}
@@ -904,41 +927,49 @@ function openClipEditor(file,dateId){
     openOverlay(`<div class="sheet-head"><button class="hbtn subtle" onclick="clipCancel()">Cancel</button><h2>Trim to a 1s loop</h2><button class="hbtn" onclick="clipSave('${dateId}')">Save</button></div>
      <div class="sheet-body">
        <video id="clip-v" src="${url}" muted playsinline></video>
-       <label>Start point</label>
-       <input type="range" id="clip-start" min="0" max="0" step="0.1" value="0" oninput="clipSeek()">
+       <label>Start</label>
+       <input type="range" id="clip-start" min="0" max="0" step="0.1" value="0" oninput="clipAdjust('start')">
+       <label>End</label>
+       <input type="range" id="clip-end" min="0" max="0" step="0.1" value="0" oninput="clipAdjust('end')">
        <div class="hint" id="clip-info">Loading…</div>
-       <div class="hint">Silent, and loops forever. Only the trimmed second is saved — the original video never leaves your phone.</div>
+       <div class="hint">Silent, and loops forever — up to 3 seconds. Only the part you keep is saved; the original video never leaves your phone.</div>
      </div>`);
     CLIP={resolve:()=>{URL.revokeObjectURL(url);resolve()},busy:false};
     const v=$('clip-v');
     v.addEventListener('loadedmetadata',()=>{
-      $('clip-start').max=Math.max(0,(v.duration||0)-CLIP_MS/1000).toFixed(1);
-      clipSeek();
+      const dur=v.duration||0;
+      for(const id of ['clip-start','clip-end'])$(id).max=dur.toFixed(1);
+      $('clip-start').value=0;
+      $('clip-end').value=Math.min(dur,CLIP_MAX_MS/1000).toFixed(1);
+      clipAdjust('start');
     });
-    // keep the preview looping inside the chosen second
+    // keep the preview looping inside the chosen window
     v.addEventListener('timeupdate',()=>{
-      const st=+$('clip-start').value;
-      if(v.currentTime>=st+CLIP_MS/1000||v.currentTime<st-0.05)v.currentTime=st;
+      const st=+$('clip-start').value,en=+$('clip-end').value;
+      if(v.currentTime>=en||v.currentTime<st-0.05)v.currentTime=st;
     });
   });
 }
-function clipSeek(){
+function clipAdjust(which){
   const v=$('clip-v');if(!v)return;
-  const st=+$('clip-start').value;
-  $('clip-info').textContent=`Starting at ${st.toFixed(1)}s of ${(v.duration||0).toFixed(1)}s`;
-  v.currentTime=st;v.play().catch(()=>{});
+  const w=clipWindow(+$('clip-start').value,+$('clip-end').value,v.duration||0,which);
+  $('clip-start').value=w.start;$('clip-end').value=w.end;
+  $('clip-info').textContent=`${w.start.toFixed(1)}s → ${w.end.toFixed(1)}s · keeping ${(w.end-w.start).toFixed(1)}s of ${(v.duration||0).toFixed(1)}s`;
+  v.currentTime=w.start;v.play().catch(()=>{});
 }
 function clipCancel(){const c=CLIP;CLIP=null;closeTop();if(c)c.resolve()}
 async function clipSave(dateId){
   if(!CLIP||CLIP.busy)return;
   CLIP.busy=true;
-  const v=$('clip-v'),st=+$('clip-start').value;
-  toast('Making your loop…',30000);
+  const v=$('clip-v');
+  const w=clipWindow(+$('clip-start').value,+$('clip-end').value,v.duration||0,'start');
+  const secs=+(w.end-w.start).toFixed(1);
+  toast('Making your loop…',40000);
   try{
-    const out=await compressClip(v,st);
-    if(!out){CLIP.busy=false;return toast('That clip is too detailed to shrink — try a simpler moment',4000)}
+    const out=await compressClip(v,w.start,secs*1000);
+    if(!out){CLIP.busy=false;return toast('That clip is too detailed to shrink — try a shorter moment',4000)}
     const fr=await db.collection('photoFulls').add({data:out.full});
-    await db.collection('photos').add({dateId,thumb:out.thumb,fullId:fr.id,kind:'clip',created:Date.now()});
+    await db.collection('photos').add({dateId,thumb:out.thumb,fullId:fr.id,kind:'clip',secs,created:Date.now()});
     toast('Loop added ✓');
   }catch(err){console.error(err);CLIP.busy=false;return toast('Could not make a loop from that video',3500)}
   clipCancel();
