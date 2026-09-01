@@ -263,9 +263,23 @@ const homeLabel=k=>{const h=homePlaces().find(p=>placeKey(p)===k);return h?h.nam
 const labelOf=l=>(l&&l.lat!=null&&(S.places[placeKey(l)]||homeLabel(placeKey(l))))||(l&&l.name)||'';
 function savePlaces(locs){
   const upd={};
-  (locs||[]).forEach(l=>{if(l&&l.lat!=null&&l.name&&S.places[placeKey(l)]!==l.name)upd[placeKey(l)]=l.name});
+  (locs||[]).forEach(l=>{
+    if(!l||l.lat==null||!l.name)return;
+    const k=placeKey(l);
+    if(homeLabel(k))return;            // a home base is named in Settings, nowhere else
+    if(S.places[k]!==l.name)upd[k]=l.name;
+  });
   if(Object.keys(upd).length)db.collection('meta').doc('places').set(upd,{merge:true});
 }
+// Loading a form adopts the shared label so edits start from what's on screen — except at
+// a home base, where the stop deliberately keeps its street address and Settings supplies
+// the name, so moving house leaves the old stop reading as the address.
+function canonLoc(l){
+  if(!l||l.lat==null)return {...l};
+  const k=placeKey(l);
+  return {...l,name:homeLabel(k)?(l.addr||l.name):labelOf(l)};
+}
+const fieldDelete=()=>{try{return firebase.firestore.FieldValue.delete()}catch(e){return null}};
 // every distinct spot the two of you have already used, for autocomplete
 function knownPlaces(){
   const out=new Map();
@@ -462,7 +476,7 @@ function homeMarkers(m){
   const pts=[];
   (S.settings&&S.settings.homes||[]).forEach(h=>{
     if(h&&h.lat!=null){
-      L.marker([h.lat,h.lng],{icon:L.divIcon({className:'',html:`<div class="home-pin">🏠 ${esc(h.label||'')}</div>`,iconSize:[0,0]}),zIndexOffset:500}).addTo(m);
+      L.marker([h.lat,h.lng],{icon:L.divIcon({className:'',html:`<div class="home-pin">🏠 ${esc(labelOf({...h,name:h.label||''}))}</div>`,iconSize:[0,0]}),zIndexOffset:500}).addTo(m);
       pts.push([h.lat,h.lng]);
     }});
   return pts;
@@ -598,7 +612,7 @@ function delIdea(id){
 let F=null;
 function openIdeaForm(id){
   const i=id?S.ideas.find(x=>x.id===id):null;
-  F={locs:i&&i.loc?[{...i.loc,name:labelOf(i.loc)}]:[],max:1};
+  F={locs:i&&i.loc?[canonLoc(i.loc)]:[],max:1};
   openOverlay(`
    <div class="sheet-head"><button class="hbtn subtle" onclick="closeTop()">Cancel</button><h2>${i?'Edit idea':'New idea'}</h2><button class="hbtn" onclick="saveIdea('${id||''}')">Save</button></div>
    <div class="sheet-body">
@@ -634,7 +648,8 @@ function drawLocPicker(){
   wrap.innerHTML=F.locs.map((l,ix)=>{
     const body=home
       ? `<span class="grow">${esc(l.addr||l.name)}</span>`
-      : `<span class="grow${l.addr&&l.addr!==l.name?' two':''}"><span class="loc-name">${esc(l.name)}</span>${l.addr&&l.addr!==l.name?`<span class="loc-sub">${esc(l.addr)}</span>`:''}</span>`;
+      : (()=>{const shown=(l.lat!=null&&homeLabel(placeKey(l)))||l.name;
+          return `<span class="grow${l.addr&&l.addr!==shown?' two':''}"><span class="loc-name">${esc(shown)}</span>${l.addr&&l.addr!==shown?`<span class="loc-sub">${esc(l.addr)}</span>`:''}</span>`})();
     return `<div class="loc-row">${F.max>1?`<span class="n">${ix+1}</span>`:'📍'}${body}`
       +(home?'':`<button class="x" title="Rename" onclick="renameLoc(${ix})">✏️</button>`)
       +(F.max>1&&F.locs.length>1?`<button class="x" onclick="mvLoc(${ix},-1)" ${ix===0?'disabled style="opacity:.25"':''}>▲</button><button class="x" onclick="mvLoc(${ix},1)" ${ix===F.locs.length-1?'disabled style="opacity:.25"':''}>▼</button>`:'')
@@ -648,8 +663,14 @@ function drawLocPicker(){
     F.locs.forEach((l,ix)=>{addNumPin(pickMap,l,ix,F.locs.length>1?F.locs.length:1);pts.push([l.lat,l.lng])});
     fit(pickMap,pts);
     pickMap.on('click',e=>{
+      const at={lat:+e.latlng.lat.toFixed(6),lng:+e.latlng.lng.toFixed(6)};
+      const known=S.places[placeKey(at)]||homeLabel(placeKey(at));
+      if(known){ // don't ask for a name we'd only throw away
+        addLoc({...at,name:known});
+        return toast(`Already saved as “${known}”`,2400);
+      }
       const name=prompt('Name this spot:','');if(name===null)return;
-      addLoc({name:name||'Pinned spot',lat:+e.latlng.lat.toFixed(6),lng:+e.latlng.lng.toFixed(6)});
+      addLoc({...at,name:name||'Pinned spot'});
     });
   },30);
   updateLocAddr();
@@ -686,16 +707,27 @@ function rmLoc(ix){F.locs.splice(ix,1);drawLocPicker()}
 function mvLoc(ix,n){const t=F.locs.splice(ix,1)[0];F.locs.splice(ix+n,0,t);drawLocPicker()}
 function renameLoc(ix){
   const l=F.locs[ix];if(!l)return;
-  const v=prompt('Call this stop:',l.name||'');
+  const k=placeKey(l);
+  if(homeLabel(k))return toast('Home bases are renamed in Settings → Home base',3000);
+  const v=prompt('Call this stop:',labelOf(l));
   if(v===null)return;                       // cancelled — keep what was there
   const name=v.trim();
   if(!name)return toast('A stop needs a name');
+  const prev=S.places[k];
+  if(prev&&prev!==name&&
+     !confirm(`This spot is currently called “${prev}”.\n\nRename it to “${name}” everywhere you've logged it?`))return;
   l.name=name;drawLocPicker();
-  const k=placeKey(l),used=knownPlaces().some(p=>placeKey(p)===k);
-  if(used)toast('Saving will rename this spot everywhere you\'ve logged it',2600);
+  if(!prev&&knownPlaces().some(p=>placeKey(p)===k))
+    toast('Saving names this spot everywhere you\'ve logged it',2600);
 }
 function addLoc(l){
-  if(l&&l.lat!=null)l.name=labelOf(l); // reuse the label this place already has
+  if(l&&l.lat!=null){
+    const k=placeKey(l);
+    // Never bake a home's label into the stop: the home names it while it lives there, and
+    // if either of you moves, the stop falls back to the street address it was logged at.
+    if(homeLabel(k))l.name=l.addr||l.name;
+    else if(S.places[k])l.name=S.places[k]; // adopt the label this place already carries
+  }
   if(F.max===1)F.locs=[l];
   else if(F.locs.length>=F.max)return toast('That’s a lot of stops! (max '+F.max+')');
   else F.locs.push(l);
@@ -840,7 +872,7 @@ function calTap(ds){
 function openDateForm(id,ideaId){
   const d=id?S.dates.find(x=>x.id===id):null;
   const idea=ideaId?S.ideas.find(x=>x.id===ideaId):null;
-  F={locs:d?(d.locs||[]).map(l=>({...l,name:labelOf(l)})):(idea&&idea.loc?[{...idea.loc,name:labelOf(idea.loc)}]:[]),max:8};
+  F={locs:d?(d.locs||[]).map(canonLoc):(idea&&idea.loc?[canonLoc(idea.loc)]:[]),max:8};
   openOverlay(`
    <div class="sheet-head"><button class="hbtn subtle" onclick="closeTop()">Cancel</button><h2>${d?'Edit memory':'Log a date'}</h2><button class="hbtn" onclick="saveDate('${id||''}')">Save</button></div>
    <div class="sheet-body">
@@ -1353,7 +1385,13 @@ function pickHome(ix){
 function saveHome(){
   const l=F.locs[0];if(!l)return toast('Pick a location first');
   const homes=(S.settings.homes||[]).slice();while(homes.length<2)homes.push(null);
+  const was=homes[F.homeIx];
   homes[F.homeIx]={label:$('f-hlabel').value.trim()||l.name,lat:l.lat,lng:l.lng,addr:l.addr||addrCache[l.lat+','+l.lng]||null};
+  // Settings is the only place a home is named, so drop any stale registry label at the
+  // spot it is moving to (and the one it left) rather than let it shadow this one.
+  const clear={},del=fieldDelete();
+  [was,homes[F.homeIx]].forEach(h=>{if(h&&h.lat!=null&&S.places[placeKey(h)]&&del)clear[placeKey(h)]=del});
+  if(Object.keys(clear).length)db.collection('meta').doc('places').set(clear,{merge:true});
   db.collection('meta').doc('settings').set({homes},{merge:true}).then(()=>{closeTop();toast('Home saved 🏠')});
 }
 async function backup(){
