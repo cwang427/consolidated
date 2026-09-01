@@ -273,6 +273,7 @@ function matchPlaces(q){
   if(!q)return [];
   return knownPlaces().filter(p=>(p.name||'').toLowerCase().includes(q)||(p.addr||'').toLowerCase().includes(q)).slice(0,5);
 }
+function fmtDayShort(ds){if(!ds)return'';const[y,m,d]=ds.split('-').map(Number);return new Date(y,m-1,d).toLocaleDateString(undefined,{month:'short',day:'numeric',year:'numeric'})}
 function fmtDay(ds){if(!ds)return'';const[y,m,d]=ds.split('-').map(Number);return new Date(y,m-1,d).toLocaleDateString(undefined,{weekday:'short',month:'short',day:'numeric',year:'numeric'})}
 function fmtTime(t){const[h,mi]=t.split(':').map(Number);return `${((h+11)%12)+1}:${String(mi).padStart(2,'0')} ${h>=12?'PM':'AM'}`}
 function todayStr(){const d=new Date();return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`}
@@ -1288,13 +1289,18 @@ function drawBigMap(){
   bigMemGroups={};
   if(bigShow.mems)liveDates().forEach(d=>(d.locs||[]).forEach(l=>{
     const key=placeKey(l);
-    const g=bigMemGroups[key]=bigMemGroups[key]||{name:labelOf(l),lat:l.lat,lng:l.lng,ids:[]};
+    const g=bigMemGroups[key]=bigMemGroups[key]||{name:labelOf(l),addr:l.addr||'',lat:l.lat,lng:l.lng,ids:[]};
     if(!g.ids.includes(d.id))g.ids.push(d.id);
   }));
   Object.entries(bigMemGroups).forEach(([key,g])=>{
-    const ds=g.ids.map(id=>S.dates.find(x=>x.id===id)).filter(Boolean);
-    const head=ds.length===1?`<b>📖 ${esc(ds[0].title)}</b><br>${fmtDay(ds[0].day)}`
-      :`<b>📖 ${ds.length} memories here</b><br>${esc(g.name)}`;
+    // the place is the headline; what happened there sits underneath
+    const ds=g.ids.map(id=>S.dates.find(x=>x.id===id)).filter(Boolean)
+      .sort((a,b)=>(b.day||'').localeCompare(a.day||''));
+    const shown=ds.slice(0,3).map(d=>`📖 ${esc(d.title)} · ${fmtDayShort(d.day)}`).join('<br>');
+    const head=`<b>📍 ${esc(g.name)}</b>`
+      +(g.addr&&g.addr!==g.name?`<br><span style="color:var(--muted)">${esc(g.addr)}</span>`:'')
+      +`<br>${shown}`
+      +(ds.length>3?`<br><span style="color:var(--muted)">+${ds.length-3} more</span>`:'');
     L.marker([g.lat,g.lng],{icon:L.divIcon({className:'',html:'<div class="mem-pin"></div>',iconSize:[0,0]})}).addTo(bigMap)
      .bindPopup(`${head}<div class="maplinks"><a href="#" onclick="flashback('${key}');return false">⏪ Flashback</a></div>`);
     pts.push([g.lat,g.lng]);
