@@ -67,7 +67,7 @@ label{display:block;font-size:13px;font-weight:700;color:var(--plum);margin:14px
 
 /* ---- overlays / sheets ---- */
 .overlay{position:fixed;inset:0;background:rgba(61,44,51,.35);z-index:500;display:flex;align-items:flex-end;animation:fade .18s;overscroll-behavior:contain;touch-action:none}
-.sheet{background:var(--bg);width:100%;max-width:560px;margin:0 auto;border-radius:20px 20px 0 0;max-height:94dvh;display:flex;flex-direction:column;animation:up .22s ease-out}
+.sheet{background:var(--bg);width:100%;max-width:560px;margin:0 auto;border-radius:20px 20px 0 0;max-height:min(94dvh,100%);display:flex;flex-direction:column;animation:up .22s ease-out}
 .sheet-head{display:flex;align-items:center;gap:10px;padding:14px 16px 10px;border-bottom:1px solid var(--line)}
 .sheet-head h2{flex:1;font-size:19px;margin:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .sheet-head .hbtn{font-size:14px;font-weight:700;color:var(--rose-dark);padding:6px 10px;border-radius:10px}
@@ -366,7 +366,7 @@ function openOverlay(inner){
   const el=document.createElement('div');el.className='overlay';
   el.innerHTML=`<div class="sheet">${inner}</div>`;
   el.addEventListener('click',e=>{if(e.target===el)closeTop()});
-  document.body.appendChild(el);overlayStack.push(el);lockScroll();
+  document.body.appendChild(el);overlayStack.push(el);lockScroll();fitOverlays();
   growAll(el);setTimeout(()=>growAll(el),50); // again once webfonts settle
   return el;
 }
@@ -391,12 +391,36 @@ function caretOffset(el){
   m.remove();
   return y;
 }
+// the on-screen keyboard covers the bottom of the page without changing any element's
+// bounds, so "visible" has to mean the visual viewport, not the sheet's own rectangle
+function viewBounds(){
+  const vv=window.visualViewport;
+  return vv?{top:vv.offsetTop,bottom:vv.offsetTop+vv.height}:{top:0,bottom:window.innerHeight};
+}
 function caretIntoView(el,box){
   const lh=parseFloat(getComputedStyle(el).lineHeight)||20,pad=10;
-  const er=el.getBoundingClientRect(),br=box.getBoundingClientRect();
+  const er=el.getBoundingClientRect(),br=box.getBoundingClientRect(),vb=viewBounds();
+  const winTop=Math.max(br.top,vb.top),winBot=Math.min(br.bottom,vb.bottom);
   const top=er.top+caretOffset(el),bot=top+lh;
-  if(bot>br.bottom-pad)box.scrollTop+=bot-(br.bottom-pad);
-  else if(top<br.top+pad)box.scrollTop-=(br.top+pad)-top;
+  if(bot>winBot-pad)box.scrollTop+=bot-(winBot-pad);
+  else if(top<winTop+pad)box.scrollTop-=(winTop+pad)-top;
+}
+// keep open sheets inside the visible area so their own bottom sits above the keyboard
+function fitOverlays(){
+  const vv=window.visualViewport;if(!vv)return;
+  overlayStack.forEach(o=>{o.style.top=vv.offsetTop+'px';o.style.height=vv.height+'px'});
+}
+if(window.visualViewport){
+  const onViewportChange=()=>{
+    fitOverlays();
+    const el=document.activeElement;
+    if(el&&el.tagName==='TEXTAREA'){
+      const box=el.closest('.sheet-body');
+      if(box)requestAnimationFrame(()=>caretIntoView(el,box));
+    }
+  };
+  window.visualViewport.addEventListener('resize',onViewportChange);
+  window.visualViewport.addEventListener('scroll',onViewportChange);
 }
 function autoGrow(el,follow){
   if(!el)return;
@@ -407,6 +431,14 @@ function autoGrow(el,follow){
   if(!box)return;
   if(box.scrollTop!==keep)box.scrollTop=keep; // undo the clamp our own measurement caused
   if(follow)caretIntoView(el,box);
+}
+// iOS animates the keyboard in; re-check once it has settled (visualViewport resize
+// covers most cases, this catches focus moves while the keyboard is already up)
+function caretAfterKeyboard(el){
+  setTimeout(()=>{
+    const box=el.closest('.sheet-body');
+    if(box&&document.activeElement===el)caretIntoView(el,box);
+  },350);
 }
 function growAll(root){(root||document).querySelectorAll('.sheet textarea').forEach(autoGrow)}
 function closeAll(){while(overlayStack.length)closeTop()}
@@ -451,7 +483,7 @@ function noteBoxes(kind,id,notes){
   return ['A','B'].map(k=>{
     const mine=k===S.me,v=(notes&&notes[k])||'';
     return `<div class="note-box"><div class="who"><span class="dot${k}"></span>${esc(pname(k))}${mine?' (you)':''}</div>
-    ${mine?`<textarea id="nb-${kind}-${k}" placeholder="${kind==='idea'?'Details, links, cravings, dreams…':'What do you remember? How did it feel?'}" oninput="autoGrow(this,true)" onblur="saveNote('${kind}','${id}','${k}')">${esc(v)}</textarea>`
+    ${mine?`<textarea id="nb-${kind}-${k}" placeholder="${kind==='idea'?'Details, links, cravings, dreams…':'What do you remember? How did it feel?'}" oninput="autoGrow(this,true)" onfocus="caretAfterKeyboard(this)" onblur="saveNote('${kind}','${id}','${k}')">${esc(v)}</textarea>`
           :`<div class="ro ${v?'':'dim'}">${v?esc(v):'Nothing written yet'}</div>`}</div>`;
   }).join('');
 }
@@ -563,7 +595,7 @@ function openIdeaForm(id){
    <div class="sheet-body">
      <label>Title</label><input id="f-title" value="${esc(i?i.title:'')}" placeholder="Picnic at the botanical garden">
      <label>Category</label><select id="f-cat">${CATS.map(c=>`<option ${i&&i.category===c?'selected':''}>${c}</option>`).join('')}</select>
-     <label>Details</label><textarea id="f-desc" placeholder="Anything worth remembering…" oninput="autoGrow(this,true)">${esc(i?i.desc:'')}</textarea>
+     <label>Details</label><textarea id="f-desc" placeholder="Anything worth remembering…" oninput="autoGrow(this,true)" onfocus="caretAfterKeyboard(this)">${esc(i?i.desc:'')}</textarea>
      <label>Location</label>${locPickerHTML()}
    </div>`);
   drawLocPicker();
