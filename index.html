@@ -297,7 +297,6 @@ function matchPlaces(q){
 }
 function fmtDayShort(ds){if(!ds)return'';const[y,m,d]=ds.split('-').map(Number);return new Date(y,m-1,d).toLocaleDateString(undefined,{month:'short',day:'numeric',year:'numeric'})}
 function fmtDay(ds){if(!ds)return'';const[y,m,d]=ds.split('-').map(Number);return new Date(y,m-1,d).toLocaleDateString(undefined,{weekday:'short',month:'short',day:'numeric',year:'numeric'})}
-function fmtTime(t){const[h,mi]=t.split(':').map(Number);return `${((h+11)%12)+1}:${String(mi).padStart(2,'0')} ${h>=12?'PM':'AM'}`}
 function todayStr(){const d=new Date();return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`}
 
 // ══════════ boot ══════════
@@ -808,7 +807,7 @@ function journalView(){
   else if(S.journalMode==='album')body=live.filter(d=>monthKey(d)===cur).map(d=>{
     const ph=photosOf(d.id);
     return `<div class="card mem-card" onclick="openDate('${d.id}')">
-      <span class="mem-day">${fmtDay(d.day)}${d.time?' · '+fmtTime(d.time):''}</span>
+      <span class="mem-day">${fmtDay(d.day)}</span>
       <div class="mem-title">${esc(d.title)}</div>
       ${(d.locs||[]).length?`<div class="idea-meta">📍 ${(d.locs||[]).map(l=>esc(labelOf(l))).join(' → ')}</div>`:''}
       ${ph.length?`<div class="thumbstrip">${ph.slice(0,8).map(p=>`<img src="${p.thumb}">`).join('')}</div>`:''}
@@ -877,8 +876,7 @@ function openDateForm(id,ideaId){
    <div class="sheet-head"><button class="hbtn subtle" onclick="closeTop()">Cancel</button><h2>${d?'Edit memory':'Log a date'}</h2><button class="hbtn" onclick="saveDate('${id||''}')">Save</button></div>
    <div class="sheet-body">
      <label>What was the date?</label><input id="f-title" value="${esc(d?d.title:(idea?idea.title:''))}" placeholder="Sunset picnic + gelato walk">
-     <div class="row2"><div><label>Day</label><input type="date" id="f-day" value="${d?d.day:todayStr()}"></div>
-     <div><label>Time (optional)</label><input type="time" id="f-time" value="${d&&d.time?d.time:''}"></div></div>
+     <label>Day</label><input type="date" id="f-day" value="${d?d.day:todayStr()}">
      <label>From an idea on our list?</label>
      <select id="f-idea"><option value="">— just a spontaneous one —</option>${S.ideas.map(i=>`<option value="${i.id}" ${(d?d.ideaId:ideaId)===i.id?'selected':''}>${esc(i.title)}</option>`).join('')}</select>
      <label>Stops along the way</label>${locPickerHTML()}
@@ -889,7 +887,7 @@ function openDateForm(id,ideaId){
 function saveDate(id){
   const title=$('f-title').value.trim();if(!title)return toast('Give it a title');
   const day=$('f-day').value;if(!day)return toast('Pick the day');
-  const data={title,day,time:$('f-time').value||'',ideaId:$('f-idea').value||null,locs:F.locs};
+  const data={title,day,ideaId:$('f-idea').value||null,locs:F.locs};
   savePlaces(F.locs);
   if(id)db.collection('dates').doc(id).set(data,{merge:true}).then(()=>{closeTop();closeTop();openDate(id);toast('Saved ✓')});
   else db.collection('dates').add({...data,refl:{A:'',B:''},created:Date.now()}).then(r=>{closeAll();openDate(r.id);toast('Logged! Now add photos & thoughts',2600)});
@@ -905,7 +903,7 @@ function openDate(id){
   openOverlay(`
    <div class="sheet-head"><button class="hbtn subtle" onclick="curDateId=null;closeTop()">✕</button><h2>${esc(d.title)}</h2><button class="hbtn" onclick="openDateForm('${id}')">Edit</button></div>
    <div class="sheet-body">
-     <span class="mem-day">${fmtDay(d.day)}${d.time?' · '+fmtTime(d.time):''}</span>
+     <span class="mem-day">${fmtDay(d.day)}</span>
      ${idea?`<div style="margin-top:6px"><span class="chip" onclick="openIdea('${idea.id}')">💡 ${esc(idea.title)}</span></div>`:''}
      ${locs.length?`<div class="section-title">${locs.length>1?'Our route that day':'Where'}</div><div id="datemap" class="map"></div>
        <div class="loc-list" style="margin-top:8px">${locs.map((l,ix)=>`<div class="loc-row">${locs.length>1?`<span class="n">${ix+1}</span>`:'📍'}<span class="grow${l.addr&&l.addr!==labelOf(l)?' two':''}"><span class="loc-name">${esc(labelOf(l))}</span>${l.addr&&l.addr!==labelOf(l)?`<span class="loc-sub">${esc(l.addr)}</span>`:''}</span></div>`).join('')}</div>`:''}
