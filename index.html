@@ -167,6 +167,7 @@ input[type=range]{padding:0;border:none;background:none;accent-color:var(--rose)
 .results{margin-top:6px}
 .results button{display:block;width:100%;text-align:left;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:9px 12px;font-size:13.5px;margin-bottom:5px}
 .hint{font-size:12.5px;color:var(--muted);margin-top:6px}
+.note-box .ro a,.idea-desc a{color:var(--rose-dark);word-break:break-word}
 
 /* ---- buttons ---- */
 .btn{display:block;width:100%;background:var(--rose);color:#fff;font-weight:800;font-size:16px;padding:14px;border-radius:14px;text-align:center;margin-top:18px}
@@ -242,6 +243,21 @@ const S={ready:false,cfgOk:false,authKnown:false,user:null,settings:null,places:
   cal:(()=>{const d=new Date();return new Date(d.getFullYear(),d.getMonth(),1)})()};
 const $=id=>document.getElementById(id);
 const esc=s=>(s??'').toString().replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+// Links in notes and details. Always escape FIRST, then wrap bare URLs — never the other
+// way round, or pasted markup would execute. Trailing punctuation stays out of the link.
+function linkify(t){
+  return esc(t).replace(/https?:\/\/[^\s<]+/g,m=>{
+    const tail=(m.match(/[.,;:!?)\]]+$/)||[''])[0],url=m.slice(0,m.length-tail.length);
+    return `<a href="${url}" target="_blank" rel="noopener">${url}</a>${tail}`;
+  });
+}
+// how a dated idea reads: soonest matter most, past ones fade
+function whenChip(ds){
+  if(!ds)return '';
+  const days=Math.round((new Date(ds+'T00:00')-new Date(todayStr()+'T00:00'))/86400000);
+  const rel=days<0?'':days===0?' · today':days===1?' · tomorrow':days<=14?` · in ${days} days`:'';
+  return `<span class="chip ${days<0?'plain':days<=14?'':'teal'}">📅 ${fmtDayShort(ds)}${rel}</span>`;
+}
 function toast(msg,ms=1800){const t=$('toast');t.textContent=msg;t.classList.add('show');clearTimeout(t._h);t._h=setTimeout(()=>t.classList.remove('show'),ms)}
 function pname(k){return PARTNERS[k].name}
 const photosOf=id=>S.photos.filter(p=>p.dateId===id).sort((a,b)=>((a.order??a.created)||0)-((b.order??b.created)||0));
@@ -506,7 +522,7 @@ function noteBoxes(kind,id,notes){
     const mine=k===S.me,v=(notes&&notes[k])||'';
     return `<div class="note-box"><div class="who"><span class="dot${k}"></span>${esc(pname(k))}${mine?' (you)':''}</div>
     ${mine?`<textarea id="nb-${kind}-${k}" placeholder="${kind==='idea'?'Details, links, cravings, dreams…':'What do you remember? How did it feel?'}" oninput="autoGrow(this,true)" onfocus="caretAfterKeyboard(this)" onblur="saveNote('${kind}','${id}','${k}')">${esc(v)}</textarea>`
-          :`<div class="ro ${v?'':'dim'}">${v?esc(v):'Nothing written yet'}</div>`}</div>`;
+          :`<div class="ro ${v?'':'dim'}">${v?linkify(v):'Nothing written yet'}</div>`}</div>`;
   }).join('');
 }
 function saveNote(kind,id,k){
@@ -570,9 +586,17 @@ function ideasView(){
   const f=S.ideaFilter;
   let list=S.ideas;
   if(f!=='all')list=list.filter(i=>i.category===f);
-  const cards=list.map(i=>`<div class="card idea-card" onclick="openIdea('${i.id}')">
+  const card=i=>`<div class="card idea-card" onclick="openIdea('${i.id}')">
       <div class="grow"><p class="idea-title">${esc(i.title)}</p>
-      <div class="idea-meta">${i.category?`<span class="chip plain">${esc(i.category)}</span>`:''}${i.loc?`<span>📍 ${esc(labelOf(i.loc))}</span>`:''}</div></div></div>`).join('');
+      <div class="idea-meta">${whenChip(i.when)}${i.category?`<span class="chip plain">${esc(i.category)}</span>`:''}${i.loc?`<span>📍 ${esc(labelOf(i.loc))}</span>`:''}</div></div></div>`;
+  // dated ideas that haven't passed float to the top, soonest first; everything else keeps
+  // its place below, so a time-bound idea can't quietly scroll out of mind
+  const today=todayStr();
+  const soon=list.filter(i=>i.when&&i.when>=today).sort((a,b)=>a.when.localeCompare(b.when));
+  const rest=list.filter(i=>!soon.includes(i));
+  const cards=(soon.length?`<div class="section-title" style="margin-top:0">⏳ Coming up</div>`+soon.map(card).join('')
+      +(rest.length?`<div class="section-title">More ideas</div>`:''):'')
+    +rest.map(card).join('');
   return `<h1 class="screen-title">Date ideas</h1><p class="screen-sub">${S.ideas.length} idea${S.ideas.length===1?'':'s'} and counting</p>
   <div class="filters">${['all'].concat(CATS).map(k=>`<button class="${f===k?'on':''}" onclick="setIdeaFilter(this)" data-f="${esc(k)}">${k==='all'?'All':esc(k)}</button>`).join('')}</div>
   ${cards||`<div class="empty"><div class="big">💡</div>No ideas here yet.<br>Tap <b>+</b> to add one!${S.ideas.length?'':`<br><button class="btn small" style="margin-top:16px" onclick="importSeed()">📥 Import our list (${SEED.length} ideas)</button>`}</div>`}`;
@@ -584,8 +608,8 @@ function openIdea(id){
   openOverlay(`
    <div class="sheet-head"><button class="hbtn subtle" onclick="closeTop()">✕</button><h2>${esc(i.title)}</h2><button class="hbtn" onclick="openIdeaForm('${id}')">Edit</button></div>
    <div class="sheet-body">
-     ${i.category?`<span class="chip plain">${esc(i.category)}</span>`:''}
-     ${i.desc?`<p style="margin:10px 0 4px;white-space:pre-wrap">${esc(i.desc)}</p>`:''}
+     ${whenChip(i.when)}${i.category?`<span class="chip plain">${esc(i.category)}</span>`:''}
+     ${i.desc?`<p class="idea-desc" style="margin:10px 0 4px;white-space:pre-wrap">${linkify(i.desc)}</p>`:''}
      ${i.loc?`<div class="section-title">📍 ${esc(labelOf(i.loc))}</div>${i.loc.addr&&i.loc.addr!==labelOf(i.loc)?`<div class="hint" style="margin:-4px 0 6px">${esc(i.loc.addr)}</div>`:''}<div id="ideamap" class="map"></div>${extMapLinks(i.loc)}`:''}
      <div class="section-title">Notes</div>
      ${noteBoxes('idea',id,i.notes)}
@@ -609,6 +633,7 @@ function openIdeaForm(id){
    <div class="sheet-body">
      <label>Title</label><input id="f-title" value="${esc(i?i.title:'')}" placeholder="Picnic at the botanical garden">
      <label>Category</label><select id="f-cat">${CATS.map(c=>`<option ${i&&i.category===c?'selected':''}>${c}</option>`).join('')}</select>
+     <label>Happening on / by (optional)</label><input type="date" id="f-when" value="${i&&i.when?i.when:''}">
      <label>Details</label><textarea id="f-desc" placeholder="Anything worth remembering…" oninput="autoGrow(this,true)" onfocus="caretAfterKeyboard(this)">${esc(i?i.desc:'')}</textarea>
      <label>Location</label>${locPickerHTML()}
    </div>`);
@@ -616,7 +641,7 @@ function openIdeaForm(id){
 }
 function saveIdea(id){
   const title=$('f-title').value.trim();if(!title)return toast('Give it a title');
-  const data={title,category:$('f-cat').value,desc:$('f-desc').value.trim(),loc:F.locs[0]||null};
+  const data={title,category:$('f-cat').value,desc:$('f-desc').value.trim(),when:$('f-when').value||null,loc:F.locs[0]||null};
   savePlaces(F.locs);
   const p=id?db.collection('ideas').doc(id).set(data,{merge:true}):db.collection('ideas').add({...data,notes:{A:'',B:''},created:Date.now()});
   p.then(()=>{closeTop();if(id){closeTop();openIdea(id)}toast('Saved ✓')});
