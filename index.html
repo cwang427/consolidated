@@ -18,7 +18,7 @@
   --bg:#faf5ef; --card:#fffdf9; --ink:#3d2c33; --muted:#9a8790;
   --rose:#c9536f; --rose-dark:#a83a55; --rose-soft:#f7dfe5;
   --teal:#3e8e8c; --teal-soft:#dff0ee;
-  --plum:#5b3a4a; --line:#eadfd6; --gold:#c9a227;
+  --plum:#5b3a4a; --line:#eadfd6; --gold:#c9a227; --mem:#1f5fd0;
   --shadow:0 2px 10px rgba(91,58,74,.08);
   --safe-b:env(safe-area-inset-bottom,0px);
 }
@@ -82,7 +82,7 @@ label{display:block;font-size:13px;font-weight:700;color:var(--plum);margin:14px
 .home-pin{background:#fff;border:2px solid var(--plum);border-radius:12px;padding:1px 7px;font-size:12px;font-weight:700;color:var(--plum);white-space:nowrap;box-shadow:var(--shadow);transform:translate(-50%,-100%)}
 .num-pin{width:26px;height:26px;border-radius:50%;background:var(--rose);border:2px solid #fff;color:#fff;font-size:13px;font-weight:800;display:flex;align-items:center;justify-content:center;box-shadow:var(--shadow);transform:translate(-50%,-50%)}
 .idea-pin{width:18px;height:18px;border-radius:50% 50% 50% 0;background:var(--rose);border:2px solid #fff;transform:rotate(-45deg) translate(-70%,-10%);box-shadow:var(--shadow)}
-.mem-pin{width:16px;height:16px;border-radius:50%;background:var(--plum);border:2px solid #fff;transform:translate(-50%,-50%);box-shadow:var(--shadow)}
+.mem-pin{width:17px;height:17px;border-radius:50%;background:var(--mem);border:2.5px solid #fff;transform:translate(-50%,-50%);box-shadow:0 1px 4px rgba(0,0,0,.4)}
 .maplinks{display:flex;gap:8px;margin-top:8px}
 .maplinks a{flex:1;text-align:center;font-size:13px;font-weight:700;color:var(--plum);background:#f1e9df;border-radius:10px;padding:8px 4px;text-decoration:none;white-space:nowrap}
 .maplinks a:active{background:var(--rose-soft)}
@@ -452,13 +452,15 @@ function autoGrow(el,follow){
   if(box.scrollTop!==keep)box.scrollTop=keep; // undo the clamp our own measurement caused
   if(follow)caretIntoView(el,box);
 }
-// iOS animates the keyboard in; re-check once it has settled (visualViewport resize
-// covers most cases, this catches focus moves while the keyboard is already up)
+// iOS animates the keyboard in over a few hundred ms, and visualViewport reports the new
+// height partway through. A single delayed check often measured the old height and left
+// the caret under the keyboard until the first keystroke moved it, so re-check across the
+// whole animation instead of guessing when it lands.
 function caretAfterKeyboard(el){
-  setTimeout(()=>{
+  [0,120,260,420,650].forEach(ms=>setTimeout(()=>{
     const box=el.closest('.sheet-body');
     if(box&&document.activeElement===el)caretIntoView(el,box);
-  },350);
+  },ms));
 }
 function growAll(root){(root||document).querySelectorAll('.sheet textarea').forEach(autoGrow)}
 function closeAll(){while(overlayStack.length)closeTop()}
@@ -1294,7 +1296,7 @@ function mapView(){
   if(bigShow.cat!=='all'&&!cats.includes(bigShow.cat))bigShow.cat='all';
   const catRow=(bigShow.ideas&&cats.length>1)?`<div class="filters">${['all'].concat(cats).map(c=>`<button class="${bigShow.cat===c?'on':''}" data-c="${esc(c)}" onclick="setMapCat(this)">${c==='all'?'All ideas':esc(c)}</button>`).join('')}</div>`:'';
   return `<h1 class="screen-title">Our map</h1><p class="screen-sub">Where we've been & where we're going</p>
- <div class="filters"><button class="${bigShow.ideas?'on':''}" onclick="bigShow.ideas=!bigShow.ideas;render()">💡 Ideas</button><button class="${bigShow.mems?'on':''}" onclick="bigShow.mems=!bigShow.mems;render()">📖 Memories</button></div>
+ <div class="filters"><button class="${bigShow.ideas?'on':''}" onclick="bigShow.ideas=!bigShow.ideas;render()">💡 Ideas</button><button class="${bigShow.mems?'on':''}" style="${bigShow.mems?'background:var(--mem);color:#fff':''}" onclick="bigShow.mems=!bigShow.mems;render()">📖 Memories</button></div>
  ${catRow}
  <div id="bigmap" class="map tall${catRow?' with-cats':''}"></div>`;
 }

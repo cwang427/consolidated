@@ -35,6 +35,7 @@ A private two-person date-journal web app: shared date-idea list (a wishlist, de
 - `[hidden]{display:none!important}` exists because component CSS uses `display:flex` — removing it re-exposes the FAB/tabbar on the login screen.
 - Emoji/theming: the user wants **minimal love/heart theming**. The calendar mark on hero screens is a custom `.calico` element showing **JUL 19** (a date meaningful to the user — the 📆 emoji hardcodes July 17, don't swap back). Home-screen icon is `apple-touch-icon.png`, a single date fruit (the pun).
 - Journal album is **paged by month**, sharing `S.cal` with the calendar view (so switching views keeps your place). Album arrows (`albumNav`) skip to the next month that *has* memories; the calendar's own arrows (`calNav`) step month by month (empty months in between are worth seeing) but both are clamped: the album to months that have memories, the calendar (`calBounds`) to the oldest memory month through the later of the newest memory month and the current month, so today stays reachable. `initCalMonth()` runs once on first data load so the album doesn't open blank. Trash is listed outside the month filter.
+- Test suite resets to one canonical `FIXTURE()` at the start of every section (`resetFixture()`), so a section that mutates state can't silently break later ones — that had happened repeatedly.
 - `SEED` array = one-tap import of the couple's original idea list; shown only while the `ideas` collection is empty.
 
 ## Testing
