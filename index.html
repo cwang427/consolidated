@@ -137,6 +137,7 @@ label{display:block;font-size:13px;font-weight:700;color:var(--plum);margin:14px
 .ph-cell{position:relative}
 .ph-badge{position:absolute;right:5px;bottom:5px;background:rgba(61,44,51,.72);color:#fff;font-size:10px;font-weight:800;padding:2px 7px;border-radius:99px;pointer-events:none}
 input[type=range]{padding:0;border:none;background:none;accent-color:var(--rose)}
+input[type=search]{-webkit-appearance:none;margin-bottom:12px}
 #clip-v{width:100%;border-radius:14px;background:#000;display:block}
 .arr-cell{position:relative}
 .arr-cell img{width:100%;aspect-ratio:1;object-fit:cover;border-radius:10px;display:block}
@@ -392,7 +393,11 @@ function render(){
   else if(S.tab==='map'){app.innerHTML=mapView();setTimeout(drawBigMap,30)}
   else app.innerHTML=settingsView();
 }
-function setTab(t){S.tab=t;render();window.scrollTo(0,0)}
+// The search boxes are the first inputs to live on the main screen, and render() skips
+// same-screen redraws while an input in #app has focus. Any user-initiated navigation
+// therefore has to drop focus first, or the tap would silently do nothing.
+function blurActive(){const a=document.activeElement;if(a&&a.blur)a.blur()}
+function setTab(t){blurActive();S.tab=t;render();window.scrollTo(0,0)}
 function fabTap(){S.tab==='journal'?openDateForm():openIdeaForm()}
 
 // ══════════ overlays ══════════
@@ -597,26 +602,49 @@ async function importSeed(){
 }
 
 // ══════════ ideas ══════════
-function ideasView(){
-  const f=S.ideaFilter;
+// every word must appear somewhere in the entry, so "hike trail" narrows rather than widens
+function hits(hay,q){
+  const h=hay.filter(Boolean).join(' ').toLowerCase();
+  return q.split(/\s+/).every(w=>h.includes(w));
+}
+const ideaHay=i=>[i.title,i.desc,i.category,i.loc&&labelOf(i.loc),i.loc&&i.loc.addr,
+                  i.notes&&i.notes.A,i.notes&&i.notes.B];
+const memHay=d=>[d.title,(d.locs||[]).map(l=>`${labelOf(l)} ${l.addr||''}`).join(' '),
+                 d.refl&&d.refl.A,d.refl&&d.refl.B];
+// typing re-renders only the list: render() deliberately skips redraws while an input in
+// #app has focus, which would otherwise freeze the results mid-search
+function ideaSearch(v){S.ideaQ=v;const el=$('idea-list');if(el)el.innerHTML=ideaListHTML()}
+function memSearch(v){S.memQ=v;const el=$('mem-list');if(el)el.innerHTML=memListHTML()}
+function ideaListHTML(){
+  const f=S.ideaFilter,q=(S.ideaQ||'').trim().toLowerCase();
   let list=S.ideas;
   if(f!=='all')list=list.filter(i=>i.category===f);
+  if(q)list=list.filter(i=>hits(ideaHay(i),q));
   const card=i=>`<div class="card idea-card" onclick="openIdea('${i.id}')">
       <div class="grow"><p class="idea-title">${esc(i.title)}</p>
       <div class="idea-meta">${whenChip(i)}${i.category?`<span class="chip plain">${esc(i.category)}</span>`:''}${i.loc?`<span>📍 ${esc(labelOf(i.loc))}</span>`:''}</div></div></div>`;
+  // searching flattens the list — a match is a match, whenever it happens
+  if(q)return list.length
+    ? `<div class="hint" style="margin:0 0 8px">${list.length} match${list.length===1?'':'es'}</div>`+list.map(card).join('')
+    : `<div class="empty">Nothing matches “${esc(S.ideaQ.trim())}”.</div>`;
   // dated ideas that haven't passed float to the top, soonest first; everything else keeps
   // its place below, so a time-bound idea can't quietly scroll out of mind
   const today=todayStr();
   const soon=list.filter(i=>i.when&&ideaEnd(i)>=today).sort((a,b)=>a.when.localeCompare(b.when));
   const rest=list.filter(i=>!soon.includes(i));
-  const cards=(soon.length?`<div class="section-title" style="margin-top:0">⏳ Coming up</div>`+soon.map(card).join('')
+  return (soon.length?`<div class="section-title" style="margin-top:0">⏳ Coming up</div>`+soon.map(card).join('')
       +(rest.length?`<div class="section-title">More ideas</div>`:''):'')
-    +rest.map(card).join('');
-  return `<h1 class="screen-title">Date ideas</h1><p class="screen-sub">${S.ideas.length} idea${S.ideas.length===1?'':'s'} and counting</p>
-  <div class="filters">${['all'].concat(CATS).map(k=>`<button class="${f===k?'on':''}" onclick="setIdeaFilter(this)" data-f="${esc(k)}">${k==='all'?'All':esc(k)}</button>`).join('')}</div>
-  ${cards||`<div class="empty"><div class="big">💡</div>No ideas here yet.<br>Tap <b>+</b> to add one!${S.ideas.length?'':`<br><button class="btn small" style="margin-top:16px" onclick="importSeed()">📥 Import our list (${SEED.length} ideas)</button>`}</div>`}`;
+    +rest.map(card).join('')
+    ||`<div class="empty"><div class="big">💡</div>No ideas here yet.<br>Tap <b>+</b> to add one!${S.ideas.length?'':`<br><button class="btn small" style="margin-top:16px" onclick="importSeed()">📥 Import our list (${SEED.length} ideas)</button>`}</div>`;
 }
-function setIdeaFilter(btn){S.ideaFilter=btn.dataset.f;render()}
+function ideasView(){
+  const f=S.ideaFilter;
+  return `<h1 class="screen-title">Date ideas</h1><p class="screen-sub">${S.ideas.length} idea${S.ideas.length===1?'':'s'} and counting</p>
+  <input type="search" id="idea-q" placeholder="Search ideas — title, notes, place" value="${esc(S.ideaQ||'')}" oninput="ideaSearch(this.value)">
+  <div class="filters">${['all'].concat(CATS).map(k=>`<button class="${f===k?'on':''}" onclick="setIdeaFilter(this)" data-f="${esc(k)}">${k==='all'?'All':esc(k)}</button>`).join('')}</div>
+  <div id="idea-list">${ideaListHTML()}</div>`;
+}
+function setIdeaFilter(btn){blurActive();S.ideaFilter=btn.dataset.f;render()}
 
 function openIdea(id){
   const i=S.ideas.find(x=>x.id===id);if(!i)return;
@@ -834,15 +862,31 @@ async function locSearch(){
 const monthKey=d=>(d.day||'').slice(0,7);
 const calKey=()=>`${S.cal.getFullYear()}-${String(S.cal.getMonth()+1).padStart(2,'0')}`;
 const memoryMonths=()=>[...new Set(liveDates().map(monthKey).filter(Boolean))].sort();
-function goMonth(k){const[y,mo]=k.split('-').map(Number);S.cal=new Date(y,mo-1,1);render();window.scrollTo(0,0)}
+function goMonth(k){blurActive();const[y,mo]=k.split('-').map(Number);S.cal=new Date(y,mo-1,1);render();window.scrollTo(0,0)}
 function albumNav(n){
   const ms=memoryMonths(),cur=calKey();
   const to=n<0?[...ms].reverse().find(m=>m<cur):ms.find(m=>m>cur);
   if(to)goMonth(to);
 }
-function journalView(){
-  const live=liveDates(),trash=S.dates.filter(d=>d.trash);
-  const seg=`<div class="seg"><button class="${S.journalMode==='album'?'on':''}" onclick="S.journalMode='album';render()">📸 Album</button><button class="${S.journalMode==='cal'?'on':''}" onclick="S.journalMode='cal';render()">🗓️ Calendar</button></div>`;
+function memCardHTML(d){
+  const ph=photosOf(d.id);
+  return `<div class="card mem-card" onclick="openDate('${d.id}')">
+      <span class="mem-day">${fmtDay(d.day)}</span>
+      <div class="mem-title">${esc(d.title)}</div>
+      ${(d.locs||[]).length?`<div class="idea-meta">📍 ${(d.locs||[]).map(l=>esc(labelOf(l))).join(' → ')}</div>`:''}
+      ${ph.length?`<div class="thumbstrip">${ph.slice(0,8).map(p=>`<img src="${p.thumb}">`).join('')}</div>`:''}
+      ${ph.length?`<div class="mem-icons">📷 ${ph.length}</div>`:''}</div>`;
+}
+function memListHTML(){
+  const live=liveDates(),q=(S.memQ||'').trim().toLowerCase();
+  // a search spans your whole history — month paging would only hide answers
+  if(q){
+    const found=live.filter(d=>hits(memHay(d),q));
+    return found.length
+      ? `<div class="hint" style="margin:0 0 8px">${found.length} match${found.length===1?'':'es'} across every month</div>`+found.map(memCardHTML).join('')
+      : `<div class="empty">Nothing matches “${esc(S.memQ.trim())}”.</div>`;
+  }
+  const seg=`<div class="seg"><button class="${S.journalMode==='album'?'on':''}" onclick="blurActive();S.journalMode='album';render()">📸 Album</button><button class="${S.journalMode==='cal'?'on':''}" onclick="blurActive();S.journalMode='cal';render()">🗓️ Calendar</button></div>`;
   const cur=calKey(),ms=memoryMonths();
   const monthRow=(S.journalMode==='album'&&live.length)?`<div class="cal-head">
     <button onclick="albumNav(-1)" ${ms.some(m=>m<cur)?'':'disabled style="opacity:.25"'}>‹</button>
@@ -850,24 +894,23 @@ function journalView(){
     <button onclick="albumNav(1)" ${ms.some(m=>m>cur)?'':'disabled style="opacity:.25"'}>›</button></div>`:'';
   let body;
   if(!live.length)body=`<div class="empty"><div class="big">📖</div>No memories yet.<br>Tap <b>+</b> to record your first date —<br>past ones count too!</div>`;
-  else if(S.journalMode==='album')body=live.filter(d=>monthKey(d)===cur).map(d=>{
-    const ph=photosOf(d.id);
-    return `<div class="card mem-card" onclick="openDate('${d.id}')">
-      <span class="mem-day">${fmtDay(d.day)}</span>
-      <div class="mem-title">${esc(d.title)}</div>
-      ${(d.locs||[]).length?`<div class="idea-meta">📍 ${(d.locs||[]).map(l=>esc(labelOf(l))).join(' → ')}</div>`:''}
-      ${ph.length?`<div class="thumbstrip">${ph.slice(0,8).map(p=>`<img src="${p.thumb}">`).join('')}</div>`:''}
-      ${ph.length?`<div class="mem-icons">📷 ${ph.length}</div>`:''}</div>`;
-  }).join('')||`<div class="empty">Nothing logged this month.<br>Use ‹ › to browse the months you have memories in.</div>`;
+  else if(S.journalMode==='album')body=live.filter(d=>monthKey(d)===cur).map(memCardHTML).join('')
+    ||`<div class="empty">Nothing logged this month.<br>Use ‹ › to browse the months you have memories in.</div>`;
   else body=calendarView();
-  const trashSec=(S.journalMode==='album'&&trash.length)?`<div class="section-title">🗑️ Trash</div>`+trash.map(d=>{
+  return seg+monthRow+body;
+}
+function journalView(){
+  const live=liveDates(),trash=S.dates.filter(d=>d.trash);
+  const trashSec=(S.journalMode==='album'&&!(S.memQ||'').trim()&&trash.length)?`<div class="section-title">🗑️ Trash</div>`+trash.map(d=>{
     const mine=d.trash.by===S.me;
     return `<div class="card"><span class="mem-day">${fmtDay(d.day)}</span><div class="mem-title">${esc(d.title)}</div>
       <p class="hint" style="margin:2px 0 8px">Moved to trash by ${esc(pname(d.trash.by))}. ${mine?`It's only deleted forever once ${esc(pname(otherOf(S.me)))} confirms.`:'Restore it, or confirm to delete it forever.'}</p>
       <button class="btn small ghost" style="margin-top:0" onclick="restoreDate('${d.id}')">Restore</button>
       ${mine?'':`<button class="btn small" style="background:#b3413f;margin-left:8px;margin-top:0" onclick="hardDeleteDate('${d.id}')">Delete forever</button>`}</div>`;
   }).join(''):'';
-  return `<h1 class="screen-title">Our journal</h1><p class="screen-sub">${live.length} memor${live.length===1?'y':'ies'} so far</p>${seg}${monthRow}${body}${trashSec}`;
+  return `<h1 class="screen-title">Our journal</h1><p class="screen-sub">${live.length} memor${live.length===1?'y':'ies'} so far</p>
+  <input type="search" id="mem-q" placeholder="Search memories — title, place, thoughts" value="${esc(S.memQ||'')}" oninput="memSearch(this.value)">
+  <div id="mem-list">${memListHTML()}</div>${trashSec}`;
 }
 function calendarView(){
   const y=S.cal.getFullYear(),mo=S.cal.getMonth();
