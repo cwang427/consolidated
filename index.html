@@ -137,7 +137,14 @@ label{display:block;font-size:13px;font-weight:700;color:var(--plum);margin:14px
 .ph-cell{position:relative}
 .ph-badge{position:absolute;right:5px;bottom:5px;background:rgba(61,44,51,.72);color:#fff;font-size:10px;font-weight:800;padding:2px 7px;border-radius:99px;pointer-events:none}
 input[type=range]{padding:0;border:none;background:none;accent-color:var(--rose)}
-input[type=search]{-webkit-appearance:none;margin-bottom:12px}
+/* iOS Safari never renders the native search clear, so we draw our own on every platform */
+input[type=search]{-webkit-appearance:none;margin-bottom:0;padding-right:42px}
+input[type=search]::-webkit-search-cancel-button{display:none}
+.searchwrap{position:relative;margin-bottom:12px}
+.searchclear{position:absolute;right:7px;top:50%;transform:translateY(-50%);width:26px;height:26px;
+  border-radius:50%;background:var(--line);color:var(--plum);font-size:13px;font-weight:800;line-height:1;
+  display:flex;align-items:center;justify-content:center}
+.searchclear:active{background:var(--muted);color:#fff}
 #clip-v{width:100%;border-radius:14px;background:#000;display:block}
 .arr-cell{position:relative}
 .arr-cell img{width:100%;aspect-ratio:1;object-fit:cover;border-radius:10px;display:block}
@@ -613,8 +620,20 @@ const memHay=d=>[d.title,(d.locs||[]).map(l=>`${labelOf(l)} ${l.addr||''}`).join
                  d.refl&&d.refl.A,d.refl&&d.refl.B];
 // typing re-renders only the list: render() deliberately skips redraws while an input in
 // #app has focus, which would otherwise freeze the results mid-search
-function ideaSearch(v){S.ideaQ=v;const el=$('idea-list');if(el)el.innerHTML=ideaListHTML()}
-function memSearch(v){S.memQ=v;const el=$('mem-list');if(el)el.innerHTML=memListHTML()}
+function showClear(which,v){const b=$(which+'-x');if(b)b.hidden=!v}
+function ideaSearch(v){S.ideaQ=v;showClear('idea',v);const el=$('idea-list');if(el)el.innerHTML=ideaListHTML()}
+function memSearch(v){S.memQ=v;showClear('mem',v);const el=$('mem-list');if(el)el.innerHTML=memListHTML()}
+function clearSearch(which){
+  const inp=$(which+'-q');if(inp)inp.value='';
+  (which==='idea'?ideaSearch:memSearch)('');
+  if(inp)inp.focus();   // as the system clear does — ready to retype
+}
+function searchBox(which,placeholder,value){
+  return `<div class="searchwrap">
+    <input type="search" id="${which}-q" placeholder="${placeholder}" value="${esc(value||'')}" oninput="${which}Search(this.value)">
+    <button class="searchclear" id="${which}-x" ${value?'':'hidden'} onclick="clearSearch('${which}')" aria-label="Clear search">✕</button>
+  </div>`;
+}
 function ideaListHTML(){
   const f=S.ideaFilter,q=(S.ideaQ||'').trim().toLowerCase();
   let list=S.ideas;
@@ -640,7 +659,7 @@ function ideaListHTML(){
 function ideasView(){
   const f=S.ideaFilter;
   return `<h1 class="screen-title">Date ideas</h1><p class="screen-sub">${S.ideas.length} idea${S.ideas.length===1?'':'s'} and counting</p>
-  <input type="search" id="idea-q" placeholder="Search ideas — title, notes, place" value="${esc(S.ideaQ||'')}" oninput="ideaSearch(this.value)">
+  ${searchBox('idea','Search ideas — title, notes, place',S.ideaQ)}
   <div class="filters">${['all'].concat(CATS).map(k=>`<button class="${f===k?'on':''}" onclick="setIdeaFilter(this)" data-f="${esc(k)}">${k==='all'?'All':esc(k)}</button>`).join('')}</div>
   <div id="idea-list">${ideaListHTML()}</div>`;
 }
@@ -909,7 +928,7 @@ function journalView(){
       ${mine?'':`<button class="btn small" style="background:#b3413f;margin-left:8px;margin-top:0" onclick="hardDeleteDate('${d.id}')">Delete forever</button>`}</div>`;
   }).join(''):'';
   return `<h1 class="screen-title">Our journal</h1><p class="screen-sub">${live.length} memor${live.length===1?'y':'ies'} so far</p>
-  <input type="search" id="mem-q" placeholder="Search memories — title, place, thoughts" value="${esc(S.memQ||'')}" oninput="memSearch(this.value)">
+  ${searchBox('mem','Search memories — title, place, thoughts',S.memQ)}
   <div id="mem-list">${memListHTML()}</div>${trashSec}`;
 }
 function calendarView(){
