@@ -251,12 +251,26 @@ function linkify(t){
     return `<a href="${url}" target="_blank" rel="noopener">${url}</a>${tail}`;
   });
 }
-// how a dated idea reads: soonest matter most, past ones fade
-function whenChip(ds){
-  if(!ds)return '';
-  const days=Math.round((new Date(ds+'T00:00')-new Date(todayStr()+'T00:00'))/86400000);
-  const rel=days<0?'':days===0?' · today':days===1?' · tomorrow':days<=14?` · in ${days} days`:'';
-  return `<span class="chip ${days<0?'plain':days<=14?'':'teal'}">📅 ${fmtDayShort(ds)}${rel}</span>`;
+// A dated idea is either a single day or a run of them. `when` is the day it starts,
+// `until` the last day when it spans several; the pair reads as one range.
+const ideaEnd=i=>(i.until&&i.until>i.when?i.until:i.when);
+function fmtRange(s,e){
+  if(!e||e<=s)return fmtDayShort(s);
+  const [y1,m1,d1]=s.split('-').map(Number),[y2,m2,d2]=e.split('-').map(Number);
+  const short={month:'short',day:'numeric'};
+  const a=new Date(y1,m1-1,d1).toLocaleDateString(undefined,short);
+  const b=new Date(y2,m2-1,d2).toLocaleDateString(undefined,y1===y2?short:{...short,year:'numeric'});
+  return `${a} – ${b}${y1===y2?', '+y2:''}`;
+}
+// soonest matter most; something running right now says so; past ones fade
+function whenChip(i){
+  const s=i&&i.when;if(!s)return '';
+  const t=todayStr(),e=ideaEnd(i);
+  const days=Math.round((new Date(s+'T00:00')-new Date(t+'T00:00'))/86400000);
+  // "on now" only makes sense for something spanning days; a single day is just "today"
+  const spans=e>s,over=e<t,running=spans&&!over&&s<=t;
+  const rel=over?'':running?' · on now':days===0?' · today':days===1?' · tomorrow':days<=14?` · in ${days} days`:'';
+  return `<span class="chip ${over?'plain':days<=14?'':'teal'}">📅 ${fmtRange(s,i.until)}${rel}</span>`;
 }
 function toast(msg,ms=1800){const t=$('toast');t.textContent=msg;t.classList.add('show');clearTimeout(t._h);t._h=setTimeout(()=>t.classList.remove('show'),ms)}
 function pname(k){return PARTNERS[k].name}
@@ -588,11 +602,11 @@ function ideasView(){
   if(f!=='all')list=list.filter(i=>i.category===f);
   const card=i=>`<div class="card idea-card" onclick="openIdea('${i.id}')">
       <div class="grow"><p class="idea-title">${esc(i.title)}</p>
-      <div class="idea-meta">${whenChip(i.when)}${i.category?`<span class="chip plain">${esc(i.category)}</span>`:''}${i.loc?`<span>📍 ${esc(labelOf(i.loc))}</span>`:''}</div></div></div>`;
+      <div class="idea-meta">${whenChip(i)}${i.category?`<span class="chip plain">${esc(i.category)}</span>`:''}${i.loc?`<span>📍 ${esc(labelOf(i.loc))}</span>`:''}</div></div></div>`;
   // dated ideas that haven't passed float to the top, soonest first; everything else keeps
   // its place below, so a time-bound idea can't quietly scroll out of mind
   const today=todayStr();
-  const soon=list.filter(i=>i.when&&i.when>=today).sort((a,b)=>a.when.localeCompare(b.when));
+  const soon=list.filter(i=>i.when&&ideaEnd(i)>=today).sort((a,b)=>a.when.localeCompare(b.when));
   const rest=list.filter(i=>!soon.includes(i));
   const cards=(soon.length?`<div class="section-title" style="margin-top:0">⏳ Coming up</div>`+soon.map(card).join('')
       +(rest.length?`<div class="section-title">More ideas</div>`:''):'')
@@ -608,7 +622,7 @@ function openIdea(id){
   openOverlay(`
    <div class="sheet-head"><button class="hbtn subtle" onclick="closeTop()">✕</button><h2>${esc(i.title)}</h2><button class="hbtn" onclick="openIdeaForm('${id}')">Edit</button></div>
    <div class="sheet-body">
-     ${whenChip(i.when)}${i.category?`<span class="chip plain">${esc(i.category)}</span>`:''}
+     ${whenChip(i)}${i.category?`<span class="chip plain">${esc(i.category)}</span>`:''}
      ${i.desc?`<p class="idea-desc" style="margin:10px 0 4px;white-space:pre-wrap">${linkify(i.desc)}</p>`:''}
      ${i.loc?`<div class="section-title">📍 ${esc(labelOf(i.loc))}</div>${i.loc.addr&&i.loc.addr!==labelOf(i.loc)?`<div class="hint" style="margin:-4px 0 6px">${esc(i.loc.addr)}</div>`:''}<div id="ideamap" class="map"></div>${extMapLinks(i.loc)}`:''}
      <div class="section-title">Notes</div>
@@ -633,7 +647,11 @@ function openIdeaForm(id){
    <div class="sheet-body">
      <label>Title</label><input id="f-title" value="${esc(i?i.title:'')}" placeholder="Picnic at the botanical garden">
      <label>Category</label><select id="f-cat">${CATS.map(c=>`<option ${i&&i.category===c?'selected':''}>${c}</option>`).join('')}</select>
-     <label>Happening on / by (optional)</label><input type="date" id="f-when" value="${i&&i.when?i.when:''}">
+     <div class="row2">
+       <div><label>Date (optional)</label><input type="date" id="f-when" value="${i&&i.when?i.when:''}"></div>
+       <div><label>Through</label><input type="date" id="f-until" value="${i&&i.until?i.until:''}"></div>
+     </div>
+     <div class="hint" style="margin-top:2px">For anything time-bound. Leave “Through” empty unless it runs across several days.</div>
      <label>Details</label><textarea id="f-desc" placeholder="Anything worth remembering…" oninput="autoGrow(this,true)" onfocus="caretAfterKeyboard(this)">${esc(i?i.desc:'')}</textarea>
      <label>Location</label>${locPickerHTML()}
    </div>`);
@@ -641,7 +659,11 @@ function openIdeaForm(id){
 }
 function saveIdea(id){
   const title=$('f-title').value.trim();if(!title)return toast('Give it a title');
-  const data={title,category:$('f-cat').value,desc:$('f-desc').value.trim(),when:$('f-when').value||null,loc:F.locs[0]||null};
+  let when=$('f-when').value||null,until=$('f-until').value||null;
+  if(!when&&until){when=until;until=null}          // an end alone is just a date
+  if(when&&until&&until<when){const t=when;when=until;until=t}   // entered backwards
+  if(until&&until<=when)until=null;                // a one-day "range" is a single date
+  const data={title,category:$('f-cat').value,desc:$('f-desc').value.trim(),when,until,loc:F.locs[0]||null};
   savePlaces(F.locs);
   const p=id?db.collection('ideas').doc(id).set(data,{merge:true}):db.collection('ideas').add({...data,notes:{A:'',B:''},created:Date.now()});
   p.then(()=>{closeTop();if(id){closeTop();openIdea(id)}toast('Saved ✓')});
