@@ -661,11 +661,9 @@ function openIdeaForm(id){
   drawLocPicker();
 }
 // date inputs have no clear affordance on iOS, so an entry made by mistake needs a way
-// out. Clearing the start clears the end too — an end with no start isn't a date range.
-function clearWhen(which){
-  if(which!=='until')$('f-when').value='';
-  $('f-until').value='';
-}
+// out. Each clear touches only its own field: an end left without a start is still a
+// perfectly good single date, and saveIdea() normalises it into one.
+function clearWhen(which){$(which==='until'?'f-until':'f-when').value=''}
 function saveIdea(id){
   const title=$('f-title').value.trim();if(!title)return toast('Give it a title');
   let when=$('f-when').value||null,until=$('f-until').value||null;
