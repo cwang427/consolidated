@@ -98,7 +98,7 @@ label{display:block;font-size:13px;font-weight:700;color:var(--plum);margin:14px
 /* textareas in sheets auto-grow to fit their text (autoGrow), so they never scroll
    internally and never need a drag handle */
 .sheet textarea{resize:none;overflow:hidden}
-.note-box .ro{white-space:pre-wrap;color:var(--ink);font-size:15px;min-height:22px}
+.note-box .ro{color:var(--ink);font-size:15px;min-height:22px}
 .note-box .ro.dim{color:var(--muted);font-style:italic}
 
 /* ---- journal ---- */
@@ -177,6 +177,27 @@ input[type=search]::-webkit-search-cancel-button{display:none}
 .hint{font-size:12.5px;color:var(--muted);margin-top:6px}
 .lnk{font-size:12px;font-weight:700;color:var(--rose-dark);margin-left:8px}
 .note-box .ro a,.idea-desc a{color:var(--rose-dark);word-break:break-word}
+.idea-desc{margin:10px 0 4px;font-size:15px}
+
+/* ---- lists in user text ---- */
+.rt-p{white-space:pre-wrap}
+.rt-p+.md-list,.md-list+.rt-p{margin-top:8px}
+.md-list{list-style:none;margin:2px 0;padding:0}
+.md-list li{position:relative;padding-left:20px;margin:4px 0;line-height:1.45}
+.md-list li::before{content:'•';position:absolute;left:5px;color:var(--muted)}
+.md-list.chk li{padding-left:28px;min-height:22px;cursor:pointer}
+.md-list.chk li::before{content:'';left:0;top:2px;width:17px;height:17px;box-sizing:border-box;
+  border:2px solid var(--rose);border-radius:5px;background:var(--card)}
+.md-list.chk li:active::before{background:var(--rose-soft)}
+.md-list.chk li.done{color:var(--muted);text-decoration:line-through}
+.md-list.chk li.done::before{content:'✓';background:var(--rose);border-color:var(--rose);color:#fff;
+  font-size:11px;font-weight:900;line-height:15px;text-align:center;text-decoration:none}
+.donebox{margin:12px 0 2px;border-top:1px solid var(--line);padding-top:8px}
+.donebox summary{font-size:12.5px;font-weight:800;color:var(--muted);cursor:pointer;list-style:none}
+.donebox summary::-webkit-details-marker{display:none}
+.donebox summary::before{content:'▸ '}
+.donebox[open] summary::before{content:'▾ '}
+.donewhen{font-size:11.5px;color:var(--muted);margin-left:8px;text-decoration:none;display:inline-block}
 
 /* ---- buttons ---- */
 .btn{display:block;width:100%;background:var(--rose);color:#fff;font-weight:800;font-size:16px;padding:14px;border-radius:14px;text-align:center;margin-top:18px}
@@ -260,6 +281,55 @@ function linkify(t){
     return `<a href="${url}" target="_blank" rel="noopener">${url}</a>${tail}`;
   });
 }
+// Lists in user-written text. A line starting with -, * or • is an item. In an idea's
+// details those items are things you might still do, so they're tickable; everywhere else
+// (notes, reflections) a list is just a list. One marker, meaning follows the place.
+const BULLET=/^[ \t]*[-*•][ \t]+(.*)$/;
+const items=t=>(t||'').split('\n').map(l=>{const m=l.match(BULLET);return m?m[1].trim():''}).filter(Boolean);
+// `id` set = tickable; `done` holds the items already ticked, which move to their own block
+function richText(t,id,done){
+  const out=[],tick=!!id;let txt=[],li=[];
+  const flushTxt=()=>{const v=txt.join('\n').replace(/^\n+|\n+$/g,'');txt=[];if(v.trim())out.push(`<div class="rt-p">${linkify(v)}</div>`)};
+  const flushList=()=>{
+    const rows=li.filter(x=>!(tick&&done&&done[x]!=null))
+      .map(x=>`<li${tick?` data-k="${esc(x)}" onclick="tickItem('${id}',this)"`:''}>${linkify(x)}</li>`).join('');
+    li=[];if(rows)out.push(`<ul class="md-list${tick?' chk':''}">${rows}</ul>`);
+  };
+  (t||'').split('\n').forEach(line=>{
+    const m=line.match(BULLET);
+    if(m&&m[1].trim()){flushTxt();li.push(m[1].trim())}else{flushList();txt.push(line)}
+  });
+  flushList();flushTxt();
+  return out.join('');
+}
+// Ticked items collapse into one block under the details, newest tick first, so the
+// living list stays short without the crossed-off ones being lost.
+function doneHTML(i){
+  const done=i.done||{},had=items(i.desc).filter(x=>done[x]!=null).sort((a,b)=>done[b]-done[a]);
+  if(!had.length)return'';
+  return `<details class="donebox"><summary>Done (${had.length})</summary><ul class="md-list chk">`
+    +had.map(x=>`<li class="done" data-k="${esc(x)}" onclick="tickItem('${i.id}',this)">${linkify(x)}<span class="donewhen">${fmtStamp(done[x])}</span></li>`).join('')
+    +`</ul></details>`;
+}
+const ideaBody=i=>richText(i.desc,i.id,i.done||{})+doneHTML(i);
+function tickItem(id,el){
+  const i=S.ideas.find(x=>x.id===id);if(!i)return;
+  const k=el.dataset.k,done=Object.assign({},i.done||{});
+  if(done[k]!=null)delete done[k];else done[k]=Date.now();
+  i.done=done;                                   // optimistic: an open sheet isn't redrawn by snapshots
+  const box=$('idea-body');if(box)box.innerHTML=ideaBody(i);
+  db.collection('ideas').doc(id).update({done}).catch(()=>toast('Could not save'));
+}
+// A middot between words (not leading one) is someone's inline list — offer to unpack it
+const SPLITTER=/\S[ \t]*[·•][ \t]*\S/;
+const splittable=t=>(t||'').split('\n').some(l=>SPLITTER.test(l));
+function toList(){
+  const el=$('f-desc');if(!el)return;
+  el.value=el.value.split('\n').map(l=>SPLITTER.test(l)
+    ? l.trim().split(/[ \t]*[·•][ \t]*/).filter(Boolean).map(x=>'- '+x).join('\n') : l).join('\n');
+  const b=$('f-tolist');if(b)b.hidden=true;
+  autoGrow(el);
+}
 // A dated idea is either a single day or a run of them. `when` is the day it starts,
 // `until` the last day when it spans several; the pair reads as one range.
 const ideaEnd=i=>(i.until&&i.until>i.when?i.until:i.when);
@@ -333,6 +403,8 @@ function matchPlaces(q){
   return knownPlaces().filter(p=>(p.name||'').toLowerCase().includes(q)||(p.addr||'').toLowerCase().includes(q)).slice(0,5);
 }
 function fmtDayShort(ds){if(!ds)return'';const[y,m,d]=ds.split('-').map(Number);return new Date(y,m-1,d).toLocaleDateString(undefined,{month:'short',day:'numeric',year:'numeric'})}
+const fmtStamp=ms=>{const d=new Date(ms),now=new Date();
+  return d.toLocaleDateString(undefined,Object.assign({month:'short',day:'numeric'},d.getFullYear()===now.getFullYear()?{}:{year:'numeric'}))};
 function fmtDay(ds){if(!ds)return'';const[y,m,d]=ds.split('-').map(Number);return new Date(y,m-1,d).toLocaleDateString(undefined,{weekday:'short',month:'short',day:'numeric',year:'numeric'})}
 function todayStr(){const d=new Date();return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`}
 
@@ -549,7 +621,7 @@ function noteBoxes(kind,id,notes){
     const mine=k===S.me,v=(notes&&notes[k])||'';
     return `<div class="note-box"><div class="who"><span class="dot${k}"></span>${esc(pname(k))}${mine?' (you)':''}</div>
     ${mine?`<textarea id="nb-${kind}-${k}" placeholder="${kind==='idea'?'Details, links, cravings, dreams…':'What do you remember? How did it feel?'}" oninput="autoGrow(this,true)" onfocus="caretAfterKeyboard(this)" onblur="saveNote('${kind}','${id}','${k}')">${esc(v)}</textarea>`
-          :`<div class="ro ${v?'':'dim'}">${v?linkify(v):'Nothing written yet'}</div>`}</div>`;
+          :`<div class="ro ${v?'':'dim'}">${v?richText(v):'Nothing written yet'}</div>`}</div>`;
   }).join('');
 }
 function saveNote(kind,id,k){
@@ -560,7 +632,7 @@ function saveNote(kind,id,k){
 
 // ══════════ starter list (one-tap import on first run) ══════════
 const SEED=[
- {t:'Clay night / pottery class',c:'Arts & culture',d:'Options:\n• Atlanta Clay Works\n• MudFire\n• Grit Ceramics\n• Cabbagetown Art Center\n• Spruill Center for the Arts'},
+ {t:'Clay night / pottery class',c:'Arts & culture',d:'Options:\n- Atlanta Clay Works\n- MudFire\n- Grit Ceramics\n- Cabbagetown Art Center\n- Spruill Center for the Arts'},
  {t:'Farmers market',c:'Food & drink',d:'Grant Park Farmers Market — Sundays 9am–1pm',l:{name:'Grant Park',lat:33.7373,lng:-84.3722}},
  {t:'Oakland Cemetery',c:'Outdoors',l:{name:'Oakland Cemetery',lat:33.7480,lng:-84.3715}},
  {t:'Cooking/baking at home 😊',c:'At home'},
@@ -573,7 +645,7 @@ const SEED=[
  {t:'GT campus',c:'Outdoors',l:{name:'Georgia Tech campus',lat:33.7756,lng:-84.3963}},
  {t:'SCAD',c:'Arts & culture'},
  {t:'Climbing',c:'Adventure'},
- {t:'Safari park / animal drive',c:'Day trip',d:'Options:\n• ATL Safari Park\n• NoGa Wild (North Georgia Wildlife & Safari Park)\n• Pettit Creek Farms\n• Wild Animal Safari (Pine Mountain)'},
+ {t:'Safari park / animal drive',c:'Day trip',d:'Options:\n- ATL Safari Park\n- NoGa Wild (North Georgia Wildlife & Safari Park)\n- Pettit Creek Farms\n- Wild Animal Safari (Pine Mountain)'},
  {t:'Zoo Atlanta',c:'Outdoors',l:{name:'Zoo Atlanta',lat:33.7335,lng:-84.3717}},
  {t:'Fernbank',c:'Arts & culture',l:{name:'Fernbank Museum',lat:33.7745,lng:-84.3280}},
  {t:'Vinyl listening room',c:'Arts & culture'},
@@ -595,7 +667,7 @@ const SEED=[
  {t:'Amicalola Falls hike',c:'Outdoors',l:{name:'Amicalola Falls State Park',lat:34.5590,lng:-84.2460}},
  {t:'Bell Mountain',c:'Outdoors',d:'Drive-up, very steep, not much of a hike — big views',l:{name:'Bell Mountain, Hiawassee',lat:34.9450,lng:-83.6950}},
  {t:'Bamboo forest hike',c:'Outdoors',d:'East Palisades bamboo forest on the Chattahoochee',l:{name:'East Palisades Trailhead',lat:33.8770,lng:-84.4450}},
- {t:'Movie nights 🎬',c:'At home',d:'The watchlist:\nSpiderman · Fantastic Beasts · Onward · The Wild Robot · Knives Out · Fantastic Mr. Fox · Isle of Dogs · Palm Springs · Big Hero 6 · The Prestige · The Martian · Project Hail Mary · The Odyssey · anything Ghibli · The Secret Life of Walter Mitty · Before Sunrise · Big Fish · Moonrise Kingdom · The Life Aquatic with Steve Zissou · Coco · La La Land · Flipped · Edward Scissorhands · The Fall (2006) · The Gorge · Follemente · Eternity · anything Wes Anderson / Tim Burton · One Night Only · Inside Out · The Mitchells vs the Machines · Monsters vs Aliens · Ne Zha · Pixar Gatto (2027) · Eternal Sunshine of the Spotless Mind · A Real Pain · Wildwood'}
+ {t:'Movie nights 🎬',c:'At home',d:'The watchlist:\n- Spiderman\n- Fantastic Beasts\n- Onward\n- The Wild Robot\n- Knives Out\n- Fantastic Mr. Fox\n- Isle of Dogs\n- Palm Springs\n- Big Hero 6\n- The Prestige\n- The Martian\n- Project Hail Mary\n- The Odyssey\n- anything Ghibli\n- The Secret Life of Walter Mitty\n- Before Sunrise\n- Big Fish\n- Moonrise Kingdom\n- The Life Aquatic with Steve Zissou\n- Coco\n- La La Land\n- Flipped\n- Edward Scissorhands\n- The Fall (2006)\n- The Gorge\n- Follemente\n- Eternity\n- anything Wes Anderson / Tim Burton\n- One Night Only\n- Inside Out\n- The Mitchells vs the Machines\n- Monsters vs Aliens\n- Ne Zha\n- Pixar Gatto (2027)\n- Eternal Sunshine of the Spotless Mind\n- A Real Pain\n- Wildwood'}
 ];
 async function importSeed(){
   toast('Importing your list…',15000);
@@ -671,7 +743,7 @@ function openIdea(id){
    <div class="sheet-head"><button class="hbtn subtle" onclick="closeTop()">✕</button><h2>${esc(i.title)}</h2><button class="hbtn" onclick="openIdeaForm('${id}')">Edit</button></div>
    <div class="sheet-body">
      ${whenChip(i)}${i.category?`<span class="chip plain">${esc(i.category)}</span>`:''}
-     ${i.desc?`<p class="idea-desc" style="margin:10px 0 4px;white-space:pre-wrap">${linkify(i.desc)}</p>`:''}
+     <div id="idea-body" class="idea-desc">${ideaBody(i)}</div>
      ${i.loc?`<div class="section-title">📍 ${esc(labelOf(i.loc))}</div>${i.loc.addr&&i.loc.addr!==labelOf(i.loc)?`<div class="hint" style="margin:-4px 0 6px">${esc(i.loc.addr)}</div>`:''}<div id="ideamap" class="map"></div>${extMapLinks(i.loc)}`:''}
      <div class="section-title">Notes</div>
      ${noteBoxes('idea',id,i.notes)}
@@ -702,7 +774,7 @@ function openIdeaForm(id){
          <input type="date" id="f-until" value="${i&&i.until?i.until:''}"></div>
      </div>
      <div class="hint" style="margin-top:2px">For anything time-bound. Leave “Through” empty unless it runs across several days.</div>
-     <label>Details</label><textarea id="f-desc" placeholder="Anything worth remembering…" oninput="autoGrow(this,true)" onfocus="caretAfterKeyboard(this)">${esc(i?i.desc:'')}</textarea>
+     <label>Details<button type="button" class="lnk" id="f-tolist" onclick="toList()" ${i&&splittable(i.desc)?'':'hidden'}>split into list</button></label><textarea id="f-desc" placeholder="Anything worth remembering…" oninput="autoGrow(this,true)" onfocus="caretAfterKeyboard(this)">${esc(i?i.desc:'')}</textarea>
      <label>Location</label>${locPickerHTML()}
    </div>`);
   drawLocPicker();
@@ -720,7 +792,17 @@ function saveIdea(id){
   const data={title,category:$('f-cat').value,desc:$('f-desc').value.trim(),when,until,loc:F.locs[0]||null};
   savePlaces(F.locs);
   const p=id?db.collection('ideas').doc(id).set(data,{merge:true}):db.collection('ideas').add({...data,notes:{A:'',B:''},created:Date.now()});
-  p.then(()=>{closeTop();if(id){closeTop();openIdea(id)}toast('Saved ✓')});
+  p.then(()=>pruneDone(id,data.desc)).then(()=>{closeTop();if(id){closeTop();openIdea(id)}toast('Saved ✓')});
+}
+// Ticks are keyed by the item's own text, so editing a line away leaves a stale key behind.
+// Drop it, or the tick would quietly resurrect if that exact text were ever typed again.
+function pruneDone(id,desc){
+  const i=id&&S.ideas.find(x=>x.id===id);if(!i||!i.done)return;
+  const live=new Set(items(desc)),done={};
+  Object.keys(i.done).forEach(k=>{if(live.has(k))done[k]=i.done[k]});
+  if(Object.keys(done).length===Object.keys(i.done).length)return;
+  i.done=done;
+  return db.collection('ideas').doc(id).update({done});
 }
 
 // ══════════ location picker ══════════
