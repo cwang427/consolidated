@@ -12,7 +12,7 @@
 <meta name="theme-color" content="#faf5ef">
 <!-- Bump this on every deploy. Settings reads it, and compares it against the copy
      live on Pages, so you can tell whether your phone is showing the latest. -->
-<meta name="build" content="2026-09-15.2">
+<meta name="build" content="2026-09-15.3">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,700&family=Nunito+Sans:wght@400;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
@@ -439,7 +439,10 @@ function boot(){
   // no network (and no read quota) next time — this is what made every app restart start
   // the downloads over. Must be called before anything else touches Firestore. Fails
   // harmlessly on browsers that don't support it or when another tab holds the lock.
-  try{db.enablePersistence({synchronizeTabs:true}).catch(()=>{})}catch(e){}
+  S.persist='starting';
+  try{db.enablePersistence({synchronizeTabs:true})
+    .then(()=>{S.persist='on'},e=>{S.persist='off ('+errCode(e)+')'})}
+  catch(e){S.persist='off ('+errCode(e)+')'}
   firebase.auth().onAuthStateChanged(async u=>{S.authKnown=true;S.user=u;if(u){await applyIdentity(u);subscribe()}render()});
 }
 // on first load, open the journal on the newest month that has memories (falling back to
@@ -509,6 +512,29 @@ async function checkBuild(){
   paintVer();
 }
 function paintVer(){const el=$('verline');if(el)el.innerHTML=verHTML()}
+
+// Photo loading has now been misdiagnosed twice from the outside, so this reports what a
+// real read actually does on this phone: whether persistence is answering, whether the
+// server is, and how long each takes. Read-only, one photo, run by hand.
+function paintDiag(t){const el=$('diagline');if(el)el.innerHTML=t}
+async function photoSelfTest(){
+  const p=S.photos.find(x=>x.fullId);
+  if(!p)return paintDiag('No photos to test with yet.');
+  const ref=db.collection('photoFulls').doc(p.fullId),out=[];
+  const time=async(label,pr)=>{
+    const t0=Date.now();
+    try{const d=await capped(pr,20000,label);
+      const n=((d&&d.data()||{}).data||'').length;
+      out.push(`${label}: ${n?Math.round(n/1024)+' KB':'empty'} in ${Date.now()-t0}ms`);
+    }catch(e){out.push(`${label}: ${esc(errCode(e))} after ${Date.now()-t0}ms`)}
+    paintDiag(out.join('<br>'));
+  };
+  paintDiag('Running…');
+  out.push(`persistence: ${S.persist||'unknown'}`);
+  await time('on-disk',ref.get({source:'cache'}));
+  await time('server',ref.get({source:'server'}));
+  await time('default',ref.get());
+}
 function verHTML(){
   const v=S.ver,me=`<b>${esc(BUILD)}</b>`;
   if(v==='…')return `${me} · <span style="color:var(--muted)">checking…</span>`;
@@ -1423,11 +1449,16 @@ function cacheFull(id,data){
 // the SDK noticing yet — an iOS PWA just resumed from background is the usual way — it can
 // sit there indefinitely. That was the "first photo spins forever, but every photo after it
 // is fine" report: the request was never going to answer, and nothing gave up on it.
-const LOAD_TRIES=[6000,10000,0];                        // 0 = wait as long as it takes
-const capped=(pr,ms)=>ms?new Promise((res,rej)=>{
-  const t=setTimeout(()=>rej(new Error('timeout')),ms);
+// EVERY stage gets a deadline. Not just the network ones: reading the local copy can hang
+// too, when persistence is still starting up or IndexedDB is wedged (which an installed PWA
+// manages regularly), and the first version of this put the uncapped local read *in front*
+// of the retry ladder — so nothing downstream could ever time out. No stage waits forever.
+const LOCAL_MS=1500,LOAD_TRIES=[6000,10000,30000];
+const capped=(pr,ms,tag)=>new Promise((res,rej)=>{
+  const t=setTimeout(()=>rej(Object.assign(new Error('timeout'),{code:(tag||'')+' timeout'})),ms);
   pr.then(v=>{clearTimeout(t);res(v)},e=>{clearTimeout(t);rej(e)});
-}):pr;
+});
+const errCode=e=>(e&&(e.code||e.message))||'failed';
 function loadFull(p){
   if(!p||!p.fullId)return Promise.resolve(null);
   const id=p.fullId;
@@ -1435,14 +1466,15 @@ function loadFull(p){
   if(fullWait.has(id))return fullWait.get(id);          // two taps, one read
   const ref=db.collection('photoFulls').doc(id);
   const grab=src=>ref.get(src?{source:src}:undefined).then(d=>(d.data()||{}).data||null);
-  // the on-disk copy first: instant, and free of both the network and the read quota
-  const attempt=n=>capped(grab(),LOAD_TRIES[n]).catch(e=>{
+  const attempt=n=>capped(grab(),LOAD_TRIES[n],'server').catch(e=>{
     if(n+1>=LOAD_TRIES.length)throw e;
     return attempt(n+1);                                // a stalled request can't be cancelled, so re-issue
   });
-  const pr=grab('cache').catch(()=>null).then(hit=>hit||attempt(0)).then(
-    data=>{fullWait.delete(id);if(data)cacheFull(id,data);return data},
-    e=>{fullWait.delete(id);throw e});
+  // the on-disk copy first: instant, and free of both the network and the read quota
+  const pr=capped(grab('cache'),LOCAL_MS,'local').catch(()=>null)
+    .then(hit=>hit||attempt(0)).then(
+      data=>{fullWait.delete(id);if(data)cacheFull(id,data);return data},
+      e=>{fullWait.delete(id);throw e});
   fullWait.set(id,pr);
   return pr;
 }
@@ -1477,7 +1509,8 @@ function openViewer(dateId,ix){
   box.addEventListener('pointercancel',vPtrUp);
   box.addEventListener('wheel',vWheel,{passive:false});
   vResetZoom();
-  vShow();
+  vShow().catch(e=>{vBusy(false);const f=$('v-fail');
+    if(f){f.textContent='Something went wrong opening this photo ('+errCode(e)+')';f.hidden=false}});
 }
 
 // pinch to zoom / drag to pan / double-tap, in raw pointer events.
@@ -1557,6 +1590,7 @@ function vWheel(e){
 let vGen=0;
 async function vShow(){
   const gen=++vGen,p=V.list[V.ix],box=document.querySelector('#viewer .v-img');
+  if(!p||!box)return;
   $('v-count').textContent=`${V.ix+1} / ${V.list.length}`;
   // clips play as a silent loop; photos stay images (and keep pinch/pan)
   const clip=p.kind==='clip',cached=fullCache.get(p.fullId);
@@ -1566,21 +1600,25 @@ async function vShow(){
   box.innerHTML=(clip?`<video id="v-img" muted playsinline poster="${p.thumb}"></video>`:`<img id="v-img">`)
     +`<div id="v-busy" class="v-busy" hidden></div>`
     +`<div id="v-fail" class="v-fail" hidden onclick="vShow()">Couldn’t load the full-size photo.<br>Tap to try again.</div>`;
-  const show=d=>{$('v-img').src=d;if(clip)boomStop=playBoomerang($('v-img'))};
+  const show=d=>{const e=$('v-img');if(!e)return;e.src=d;if(clip)boomStop=playBoomerang(e)};
   if(cached){show(cached);return vPrefetch()}             // already here: no fuzzy stage at all
-  if(!clip)$('v-img').src=p.thumb;                        // stand-in while the full arrives
+  if(!clip)show(p.thumb);                                 // stand-in while the full arrives
   vBusy(true);
-  let data=null,threw=false;
-  try{data=await loadFull(p)}catch(e){threw=true}
+  let data=null,why='';
+  try{data=await loadFull(p)}catch(e){why=errCode(e)}
   // Only the newest vShow owns the screen. This used to compare the photo object itself,
   // which the photos snapshot can swap out from under us — and bailing out that way also
   // skipped the vBusy(false) below, stranding the spinner.
-  if(gen!==vGen||!$('v-img'))return;
+  if(gen!==vGen)return;
   vBusy(false);
-  if(data){show(data);vPrefetch()}
-  else if(threw||p.fullId)$('v-fail').hidden=false;       // a photo with no fullId just has no full
+  if(data)return void(show(data),vPrefetch());
+  if(!p.fullId)return;                                    // nothing to load; the thumb is all there is
+  // Never a silent dead end: if the full didn't arrive, say so and name the reason, so a
+  // stall is reportable instead of just looking like a bad photo.
+  const f=$('v-fail');
+  if(f){f.innerHTML=`Couldn’t load the full-size photo.${why?` <span style="opacity:.65">(${esc(why)})</span>`:''}<br>Tap to try again.`;f.hidden=false}
 }
-function vNav(n){if(!V)return;V.ix=(V.ix+n+V.list.length)%V.list.length;vResetZoom();vShow()}
+function vNav(n){if(!V)return;V.ix=(V.ix+n+V.list.length)%V.list.length;vResetZoom();vShow().catch(()=>vBusy(false))}
 function closeViewer(){vGen++;clearTimeout(busyT);const el=$('viewer');if(el){el.remove();unlockScroll()}if(boomStop){boomStop();boomStop=null}V=null}
 async function vDelete(){
   if(!V||!confirm('Delete this photo?'))return;
@@ -1662,7 +1700,11 @@ function settingsView(){
      <button class="btn small" onclick="backup()">Download backup</button></div>
    <div class="card"><div class="section-title" style="margin-top:0">Version</div>
      <p class="hint" style="margin-top:0">Which build this phone is showing, checked against what’s deployed.</p>
-     <div id="verline" class="hint" style="margin-top:0">${verHTML()}</div></div>`;
+     <div id="verline" class="hint" style="margin-top:0">${verHTML()}</div>
+     <div class="section-title">Photo loading</div>
+     <p class="hint" style="margin-top:0">Times one real photo read, to see where a slow photo is actually stuck.</p>
+     <div id="diagline" class="hint" style="margin:0 0 10px">Not run yet.</div>
+     <button class="btn small ghost" onclick="photoSelfTest()">Run test</button></div>`;
 }
 function setMe(k){S.me=k;localStorage.setItem('dj_me',k);render();toast(`Hi, ${pname(k)}!`)}
 function pickHome(ix){
