@@ -12,7 +12,7 @@
 <meta name="theme-color" content="#faf5ef">
 <!-- Bump this on every deploy. Settings reads it, and compares it against the copy
      live on Pages, so you can tell whether your phone is showing the latest. -->
-<meta name="build" content="2026-09-15.1">
+<meta name="build" content="2026-09-15.2">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,700&family=Nunito+Sans:wght@400;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
@@ -435,6 +435,11 @@ function boot(){
   if(!S.cfgOk){render();return}
   firebase.initializeApp(firebaseConfig);
   db=firebase.firestore();
+  // Keeps documents in IndexedDB across launches, so a photo you've already opened costs
+  // no network (and no read quota) next time — this is what made every app restart start
+  // the downloads over. Must be called before anything else touches Firestore. Fails
+  // harmlessly on browsers that don't support it or when another tab holds the lock.
+  try{db.enablePersistence({synchronizeTabs:true}).catch(()=>{})}catch(e){}
   firebase.auth().onAuthStateChanged(async u=>{S.authKnown=true;S.user=u;if(u){await applyIdentity(u);subscribe()}render()});
 }
 // on first load, open the journal on the newest month that has memories (falling back to
@@ -1414,15 +1419,28 @@ function cacheFull(id,data){
   fullCache.delete(id);fullCache.set(id,data);          // re-insert = most recently used
   while(fullCache.size>FULL_KEEP)fullCache.delete(fullCache.keys().next().value);
 }
+// A Firestore get() has no timeout of its own: on a connection that has gone away without
+// the SDK noticing yet — an iOS PWA just resumed from background is the usual way — it can
+// sit there indefinitely. That was the "first photo spins forever, but every photo after it
+// is fine" report: the request was never going to answer, and nothing gave up on it.
+const LOAD_TRIES=[6000,10000,0];                        // 0 = wait as long as it takes
+const capped=(pr,ms)=>ms?new Promise((res,rej)=>{
+  const t=setTimeout(()=>rej(new Error('timeout')),ms);
+  pr.then(v=>{clearTimeout(t);res(v)},e=>{clearTimeout(t);rej(e)});
+}):pr;
 function loadFull(p){
   if(!p||!p.fullId)return Promise.resolve(null);
   const id=p.fullId;
   if(fullCache.has(id))return Promise.resolve(fullCache.get(id));
   if(fullWait.has(id))return fullWait.get(id);          // two taps, one read
-  const once=()=>db.collection('photoFulls').doc(id).get().then(d=>(d.data()||{}).data||null);
-  // one retry, then let it throw: a dropped read used to be swallowed, leaving the thumb
-  // up with no way to tell a slow photo from a failed one
-  const pr=once().catch(once).then(
+  const ref=db.collection('photoFulls').doc(id);
+  const grab=src=>ref.get(src?{source:src}:undefined).then(d=>(d.data()||{}).data||null);
+  // the on-disk copy first: instant, and free of both the network and the read quota
+  const attempt=n=>capped(grab(),LOAD_TRIES[n]).catch(e=>{
+    if(n+1>=LOAD_TRIES.length)throw e;
+    return attempt(n+1);                                // a stalled request can't be cancelled, so re-issue
+  });
+  const pr=grab('cache').catch(()=>null).then(hit=>hit||attempt(0)).then(
     data=>{fullWait.delete(id);if(data)cacheFull(id,data);return data},
     e=>{fullWait.delete(id);throw e});
   fullWait.set(id,pr);
@@ -1536,8 +1554,9 @@ function vWheel(e){
   vSetScale(Z.scale*(e.deltaY<0?1.15:0.87),{x:e.clientX-r.left-r.width/2,y:e.clientY-r.top-r.height/2});
   vApplyZoom(false);
 }
+let vGen=0;
 async function vShow(){
-  const p=V.list[V.ix],box=document.querySelector('#viewer .v-img');
+  const gen=++vGen,p=V.list[V.ix],box=document.querySelector('#viewer .v-img');
   $('v-count').textContent=`${V.ix+1} / ${V.list.length}`;
   // clips play as a silent loop; photos stay images (and keep pinch/pan)
   const clip=p.kind==='clip',cached=fullCache.get(p.fullId);
@@ -1553,13 +1572,16 @@ async function vShow(){
   vBusy(true);
   let data=null,threw=false;
   try{data=await loadFull(p)}catch(e){threw=true}
-  if(!V||V.list[V.ix]!==p||!$('v-img'))return;            // moved on while it loaded
+  // Only the newest vShow owns the screen. This used to compare the photo object itself,
+  // which the photos snapshot can swap out from under us — and bailing out that way also
+  // skipped the vBusy(false) below, stranding the spinner.
+  if(gen!==vGen||!$('v-img'))return;
   vBusy(false);
   if(data){show(data);vPrefetch()}
   else if(threw||p.fullId)$('v-fail').hidden=false;       // a photo with no fullId just has no full
 }
 function vNav(n){if(!V)return;V.ix=(V.ix+n+V.list.length)%V.list.length;vResetZoom();vShow()}
-function closeViewer(){clearTimeout(busyT);const el=$('viewer');if(el){el.remove();unlockScroll()}if(boomStop){boomStop();boomStop=null}V=null}
+function closeViewer(){vGen++;clearTimeout(busyT);const el=$('viewer');if(el){el.remove();unlockScroll()}if(boomStop){boomStop();boomStop=null}V=null}
 async function vDelete(){
   if(!V||!confirm('Delete this photo?'))return;
   const p=V.list[V.ix];
