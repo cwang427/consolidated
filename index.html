@@ -12,7 +12,7 @@
 <meta name="theme-color" content="#faf5ef">
 <!-- Bump this on every deploy. Settings reads it, and compares it against the copy
      live on Pages, so you can tell whether your phone is showing the latest. -->
-<meta name="build" content="2026-09-15.4">
+<meta name="build" content="2026-09-15.5">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,700&family=Nunito+Sans:wght@400;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
@@ -278,7 +278,7 @@ const PARTNERS={A:{name:'Mr. Soccerboy',emailHash:'9ed83fa4276eb047b246d4ad094cf
 let db=null;
 const S={ready:false,cfgOk:false,authKnown:false,user:null,settings:null,places:{},ideas:[],dates:[],photos:[],
   me:localStorage.getItem('dj_me')||null,
-  tab:'ideas',ideaFilter:'all',journalMode:'album',ver:null,
+  tab:'ideas',ideaFilter:'all',journalMode:'album',ver:null,backup:null,
   cal:(()=>{const d=new Date();return new Date(d.getFullYear(),d.getMonth(),1)})()};
 const $=id=>document.getElementById(id);
 const esc=s=>(s??'').toString().replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -516,7 +516,7 @@ function paintVer(){const el=$('verline');if(el)el.innerHTML=verHTML()}
 // Photo loading has now been misdiagnosed twice from the outside, so this reports what a
 // real read actually does on this phone: whether persistence is answering, whether the
 // server is, and how long each takes. Read-only, one photo, run by hand.
-function paintDiag(t){const el=$('diagline');if(el)el.innerHTML=t}
+function paintDiag(t){const el=$('diagline');if(el){el.innerHTML=t;el.hidden=!t}}
 async function photoSelfTest(){
   const p=S.photos.find(x=>x.fullId);
   if(!p)return paintDiag('No photos to test with yet.');
@@ -1716,15 +1716,13 @@ function settingsView(){
      <p class="hint" style="margin-top:0">Signed in as ${esc(S.user.email||'')}.</p>
      <button class="btn small ghost" onclick="signOut()">Sign out</button></div>
    <div class="card"><div class="section-title" style="margin-top:0">Backup</div>
-     <p class="hint" style="margin-top:0">Downloads everything — ideas, memories, notes, and photos — as one JSON file. Do it once in a while!</p>
-     <button class="btn small" onclick="backup()">Download backup</button></div>
+     <p class="hint" style="margin-top:0">Gathers everything — ideas, memories, notes, and every photo — into one JSON file, then hands it to your phone to save. Do it once in a while!</p>
+     <div id="backupbox">${backupHTML()}</div></div>
    <div class="card"><div class="section-title" style="margin-top:0">Version</div>
      <p class="hint" style="margin-top:0">Which build this phone is showing, checked against what’s deployed.</p>
      <div id="verline" class="hint" style="margin-top:0">${verHTML()}</div>
-     <div class="section-title">Photo loading</div>
-     <p class="hint" style="margin-top:0">Times one real photo read, to see where a slow photo is actually stuck.</p>
-     <div id="diagline" class="hint" style="margin:0 0 10px">Not run yet.</div>
-     <button class="btn small ghost" onclick="photoSelfTest()">Run test</button></div>`;
+     <div class="hint" style="margin-top:6px"><button class="lnk" style="margin:0" onclick="photoSelfTest()">test photo loading</button></div>
+     <div id="diagline" class="hint" style="margin-top:6px" hidden></div></div>`;
 }
 function setMe(k){S.me=k;localStorage.setItem('dj_me',k);render();toast(`Hi, ${pname(k)}!`)}
 function pickHome(ix){
@@ -1749,15 +1747,68 @@ function saveHome(){
   if(Object.keys(clear).length)db.collection('meta').doc('places').set(clear,{merge:true});
   db.collection('meta').doc('settings').set({homes},{merge:true}).then(()=>{closeTop();toast('Home saved 🏠')});
 }
-async function backup(){
-  toast('Preparing backup…',10000);
-  const fulls={};
-  for(const p of S.photos){
-    try{const d=await db.collection('photoFulls').doc(p.fullId).get();fulls[p.fullId]=(d.data()||{}).data||null}catch(e){}
+// Backing up is two taps on purpose. Gathering every full-size photo takes a while, and
+// iOS will only hand a file to the share sheet from inside a real tap — so the gathering
+// happens first, and saving is its own gesture. The old one-shot version clicked a
+// synthetic <a download>, which iOS ignores outright, and then claimed success anyway: it
+// never once produced a file on a phone.
+let backupFile=null;
+const fmtSize=b=>b>=1048576?(b/1048576).toFixed(1)+' MB':Math.max(1,Math.round(b/1024))+' KB';
+function paintBackup(){const el=$('backupbox');if(el)el.innerHTML=backupHTML()}
+function backupHTML(){
+  const b=S.backup;
+  if(b==='working')return `<button class="btn small" disabled>${esc(S.backupMsg||'Preparing…')}</button>`;
+  if(b&&b.name)return `<button class="btn small" onclick="saveBackup()">Save backup (${esc(b.size)})</button>
+    <p class="hint">${esc(b.name)}${b.missing?` · ${b.missing} photo${b.missing===1?'':'s'} couldn’t be read`:''}</p>`;
+  return `<button class="btn small" onclick="makeBackup()">Prepare backup</button>${b==='error'?`<p class="hint">${esc(S.backupMsg||'')}</p>`:''}`;
+}
+async function makeBackup(){
+  S.backup='working';S.backupMsg='Preparing…';paintBackup();
+  try{
+    const fulls={},total=S.photos.length;let n=0,missing=0;
+    for(const p of S.photos){
+      S.backupMsg=`Reading photos ${++n}/${total}…`;paintBackup();
+      if(!p.fullId)continue;
+      let data=null;
+      try{                                              // the on-disk copy first, as the viewer does
+        const c=await capped(db.collection('photoFulls').doc(p.fullId).get({source:'cache'}),LOCAL_MS,'local');
+        data=(c.data()||{}).data||null;
+      }catch(e){}
+      if(!data)try{
+        const d=await capped(db.collection('photoFulls').doc(p.fullId).get(),LOAD_TRIES[1],'server');
+        data=(d.data()||{}).data||null;
+      }catch(e){}
+      if(data)fulls[p.fullId]=data;else missing++;       // a gap is reported, never silently dropped
+    }
+    const blob=new Blob([JSON.stringify({exported:new Date().toISOString(),build:BUILD,
+      settings:S.settings,ideas:S.ideas,dates:S.dates,photos:S.photos,photoFulls:fulls})],
+      {type:'application/json'});
+    const name=`consolidated-backup-${todayStr()}.json`;
+    backupFile=new File([blob],name,{type:'application/json'});
+    S.backup={name,size:fmtSize(blob.size),missing};
+  }catch(e){backupFile=null;S.backup='error';S.backupMsg='Couldn’t prepare the backup ('+errCode(e)+')'}
+  paintBackup();
+}
+// Runs straight off the tap: both routes need the user gesture, and awaiting anything here
+// would spend it. iOS has no <a download>, so the share sheet ("Save to Files") is the way.
+function saveBackup(){
+  if(!backupFile)return;
+  const done=()=>{S.backup=null;paintBackup();toast('Backup saved ✓')};
+  if(navigator.canShare&&navigator.canShare({files:[backupFile]})){
+    navigator.share({files:[backupFile],title:backupFile.name})
+      .then(done,e=>{if(!e||e.name!=='AbortError')downloadBackup(done)});
+    return;
   }
-  const blob=new Blob([JSON.stringify({exported:new Date().toISOString(),settings:S.settings,ideas:S.ideas,dates:S.dates,photos:S.photos.map(p=>({...p,thumb:p.thumb})),photoFulls:fulls})],{type:'application/json'});
-  const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=`date-journal-backup-${todayStr()}.json`;a.click();
-  toast('Backup downloaded ✓');
+  downloadBackup(done);
+}
+function downloadBackup(done){
+  try{
+    const url=URL.createObjectURL(backupFile),a=document.createElement('a');
+    a.href=url;a.download=backupFile.name;
+    document.body.appendChild(a);a.click();a.remove();   // Safari won't click a detached anchor
+    setTimeout(()=>URL.revokeObjectURL(url),10000);
+    done();
+  }catch(e){toast('Couldn’t save the file ('+errCode(e)+')',3000)}
 }
 
 // ══════════ shared login ══════════

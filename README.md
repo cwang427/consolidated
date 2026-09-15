@@ -54,7 +54,7 @@ The app walks you through it: sign in with your own login (once per device — i
 - **Photos** are resized to ~1600px JPEG on your phone before upload, so each is roughly 200–500 KB. The free 1 GB Firestore tier holds ~3,000 photos. They're "screen quality," not print-res originals — keep the originals in your camera roll.
 - **Journal** flips between an album feed and a calendar; tap any marked day to relive it.
 - **Free-tier math**: Firestore's Spark plan gives 1 GB storage, 50K reads and 20K writes per day. Two people can't realistically dent the daily quotas; storage is the only number to watch, and the app keeps photos small.
-- **Backup**: Settings → Download backup grabs everything (including photos) as one JSON file.
+- **Backup**: Settings → Backup. **Prepare backup** gathers everything (including every full-size photo) into one JSON file, then **Save backup** hands it to your phone — on iOS that's the share sheet, so pick *Save to Files*. It's two taps because iOS only lets a page hand over a file from inside a real tap, and gathering the photos takes a moment. If any photo can't be read it says so rather than quietly leaving it out.
 
 ## Customizing
 It's one file. Colors live in the `:root` CSS variables at the top; categories in the `CATS` array. Ask Claude to change anything.
