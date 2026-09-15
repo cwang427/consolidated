@@ -10,6 +10,9 @@
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
 <meta name="apple-mobile-web-app-title" content="ConsoliDated">
 <meta name="theme-color" content="#faf5ef">
+<!-- Bump this on every deploy. Settings reads it, and compares it against the copy
+     live on Pages, so you can tell whether your phone is showing the latest. -->
+<meta name="build" content="2026-09-15.1">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,700&family=Nunito+Sans:wght@400;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
@@ -275,7 +278,7 @@ const PARTNERS={A:{name:'Mr. Soccerboy',emailHash:'9ed83fa4276eb047b246d4ad094cf
 let db=null;
 const S={ready:false,cfgOk:false,authKnown:false,user:null,settings:null,places:{},ideas:[],dates:[],photos:[],
   me:localStorage.getItem('dj_me')||null,
-  tab:'ideas',ideaFilter:'all',journalMode:'album',
+  tab:'ideas',ideaFilter:'all',journalMode:'album',ver:null,
   cal:(()=>{const d=new Date();return new Date(d.getFullYear(),d.getMonth(),1)})()};
 const $=id=>document.getElementById(id);
 const esc=s=>(s??'').toString().replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -482,7 +485,34 @@ function render(){
 // same-screen redraws while an input in #app has focus. Any user-initiated navigation
 // therefore has to drop focus first, or the tap would silently do nothing.
 function blurActive(){const a=document.activeElement;if(a&&a.blur)a.blur()}
-function setTab(t){blurActive();S.tab=t;render();window.scrollTo(0,0)}
+function setTab(t){blurActive();S.tab=t;render();window.scrollTo(0,0);if(t==='settings')checkBuild()}
+
+// ══════════ which build am I looking at? ══════════
+// An installed PWA keeps serving whatever HTML iOS last cached, so "did my change land?"
+// isn't answerable from the screen. The <meta> stamp says what this copy is; the check
+// re-fetches the deployed file and compares. `cache:'reload'` both bypasses the cached
+// copy and *replaces* it, so the Reload button below then picks the new file up.
+const BUILD=(document.querySelector('meta[name=build]')||{}).content||'unknown';
+async function checkBuild(){
+  if(S.ver==='…')return;                      // already in flight
+  S.ver='…';paintVer();
+  try{
+    const r=await fetch(location.pathname,{cache:'reload'});
+    const m=new DOMParser().parseFromString(await r.text(),'text/html').querySelector('meta[name=build]');
+    S.ver=(m&&m.content)||'?';
+  }catch(e){S.ver='?'}
+  paintVer();
+}
+function paintVer(){const el=$('verline');if(el)el.innerHTML=verHTML()}
+function verHTML(){
+  const v=S.ver,me=`<b>${esc(BUILD)}</b>`;
+  if(v==='…')return `${me} · <span style="color:var(--muted)">checking…</span>`;
+  if(!v)return `${me}<button class="lnk" onclick="checkBuild()">check for updates</button>`;
+  if(v==='?')return `${me} · couldn’t check<button class="lnk" onclick="checkBuild()">try again</button>`;
+  if(v===BUILD)return `${me} · up to date ✓<button class="lnk" onclick="checkBuild()">check again</button>`;
+  return `${me} · <b style="color:var(--rose-dark)">${esc(v)} is live</b>
+   <button class="btn small" style="margin-top:10px" onclick="location.reload()">Reload to update</button>`;
+}
 function fabTap(){S.tab==='journal'?openDateForm():openIdeaForm()}
 
 // ══════════ overlays ══════════
@@ -1607,7 +1637,10 @@ function settingsView(){
      <button class="btn small ghost" onclick="signOut()">Sign out</button></div>
    <div class="card"><div class="section-title" style="margin-top:0">Backup</div>
      <p class="hint" style="margin-top:0">Downloads everything — ideas, memories, notes, and photos — as one JSON file. Do it once in a while!</p>
-     <button class="btn small" onclick="backup()">Download backup</button></div>`;
+     <button class="btn small" onclick="backup()">Download backup</button></div>
+   <div class="card"><div class="section-title" style="margin-top:0">Version</div>
+     <p class="hint" style="margin-top:0">Which build this phone is showing, checked against what’s deployed.</p>
+     <div id="verline" class="hint" style="margin-top:0">${verHTML()}</div></div>`;
 }
 function setMe(k){S.me=k;localStorage.setItem('dj_me',k);render();toast(`Hi, ${pname(k)}!`)}
 function pickHome(ix){
