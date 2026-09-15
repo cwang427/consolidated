@@ -12,7 +12,7 @@
 <meta name="theme-color" content="#faf5ef">
 <!-- Bump this on every deploy. Settings reads it, and compares it against the copy
      live on Pages, so you can tell whether your phone is showing the latest. -->
-<meta name="build" content="2026-09-15.8">
+<meta name="build" content="2026-09-15.9">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,700&family=Nunito+Sans:wght@400;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
@@ -195,20 +195,6 @@ input[type=search]::-webkit-search-cancel-button{display:none}
 .idea-desc{margin:10px 0 4px;font-size:15px}
 
 /* ---- lists in user text ---- */
-/* A web app cannot actually lock orientation on iOS: screen.orientation.lock() is
-   unsupported in Safari, and a home-screen app ignores the manifest's `orientation`.
-   So the lock is this — on a phone-sized landscape viewport, ask for the phone back.
-   Height-gated, so tablets and desktop browsers (where landscape is legitimate) are
-   untouched, and it sits above every overlay including the photo viewer. */
-#rotate{display:none}
-@media (orientation:landscape) and (max-height:500px){
-  #rotate{display:flex;position:fixed;inset:0;z-index:900;background:var(--bg);
-    flex-direction:column;align-items:center;justify-content:center;gap:10px;
-    text-align:center;padding:24px calc(24px + env(safe-area-inset-left,0px))}
-  #rotate .ico{font-size:38px;line-height:1}
-  #rotate b{font-size:19px}
-  #rotate span{font-size:14px;color:var(--muted)}
-}
 .rt-p{white-space:pre-wrap}
 .rt-p+.md-list,.md-list+.rt-p{margin-top:8px}
 .md-list{list-style:none;margin:2px 0;padding:0}
@@ -268,7 +254,6 @@ hr{border:none;border-top:1px solid var(--line);margin:18px 0}
   <button id="tab-settings" onclick="setTab('settings')"><span class="ico">⚙️</span>Settings</button>
 </nav>
 <button id="fab" hidden onclick="fabTap()">+</button>
-<div id="rotate"><span class="ico">📱</span><b>Turn your phone upright</b><span>ConsoliDated is built for portrait.</span></div>
 <div id="toast"></div>
 <input type="file" id="photoInput" accept="image/*,video/*" multiple hidden>
 
