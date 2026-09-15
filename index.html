@@ -12,7 +12,7 @@
 <meta name="theme-color" content="#faf5ef">
 <!-- Bump this on every deploy. Settings reads it, and compares it against the copy
      live on Pages, so you can tell whether your phone is showing the latest. -->
-<meta name="build" content="2026-09-15.5">
+<meta name="build" content="2026-09-15.6">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,700&family=Nunito+Sans:wght@400;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
@@ -569,6 +569,7 @@ function openOverlay(inner){
   el.innerHTML=`<div class="sheet">${inner}</div>`;
   el.addEventListener('click',e=>{if(e.target===el)closeTop()});
   document.body.appendChild(el);overlayStack.push(el);lockScroll();fitOverlays();
+  requestAnimationFrame(fitOverlays);setTimeout(fitOverlays,120);   // in case the viewport was mid-change
   growAll(el);setTimeout(()=>growAll(el),50); // again once webfonts settle
   return el;
 }
@@ -607,10 +608,25 @@ function caretIntoView(el,box){
   if(bot>winBot-pad)box.scrollTop+=bot-(winBot-pad);
   else if(top<winTop+pad)box.scrollTop-=(winTop+pad)-top;
 }
-// keep open sheets inside the visible area so their own bottom sits above the keyboard
+// Keep open sheets inside the visible area so their own bottom sits above the keyboard.
+//
+// These inline styles override the .overlay's `inset:0`, so they must only be set when the
+// keyboard really is up. visualViewport can report a short, stale height when nothing is
+// covering the page at all — coming back from a native share sheet, or while the address
+// bar animates — and pinning to that left the sheet occupying a strip at the top of the
+// screen with the page showing below it, frozen (the body is position:fixed while an
+// overlay is open). Nothing re-ran this until the next viewport event, so it just stayed
+// broken. Requiring a focused field means an unexplained short viewport falls back to
+// full screen instead of a broken one.
+const typingNow=()=>{const a=document.activeElement;
+  return !!a&&(a.tagName==='TEXTAREA'||a.tagName==='INPUT'||a.tagName==='SELECT')};
 function fitOverlays(){
   const vv=window.visualViewport;if(!vv)return;
-  overlayStack.forEach(o=>{o.style.top=vv.offsetTop+'px';o.style.height=vv.height+'px'});
+  const pin=typingNow()&&vv.height<window.innerHeight-60;
+  overlayStack.forEach(o=>{
+    if(pin){o.style.top=vv.offsetTop+'px';o.style.height=vv.height+'px'}
+    else{o.style.top='';o.style.height=''}             // back to inset:0 — always full screen
+  });
 }
 if(window.visualViewport){
   const onViewportChange=()=>{
@@ -623,6 +639,8 @@ if(window.visualViewport){
   };
   window.visualViewport.addEventListener('resize',onViewportChange);
   window.visualViewport.addEventListener('scroll',onViewportChange);
+  addEventListener('focusin',fitOverlays);addEventListener('focusout',()=>setTimeout(fitOverlays,60));
+  addEventListener('pageshow',()=>setTimeout(fitOverlays,60));      // returning from a share sheet / bfcache
 }
 function autoGrow(el,follow){
   if(!el)return;
@@ -1793,7 +1811,9 @@ async function makeBackup(){
 // would spend it. iOS has no <a download>, so the share sheet ("Save to Files") is the way.
 function saveBackup(){
   if(!backupFile)return;
-  const done=()=>{S.backup=null;paintBackup();toast('Backup saved ✓')};
+  // drop the File once it's away: it holds every full-size photo, and leaving tens of MB
+  // alive invites iOS to start reclaiming memory underneath the app
+  const done=()=>{backupFile=null;S.backup=null;paintBackup();toast('Backup saved ✓')};
   if(navigator.canShare&&navigator.canShare({files:[backupFile]})){
     navigator.share({files:[backupFile],title:backupFile.name})
       .then(done,e=>{if(!e||e.name!=='AbortError')downloadBackup(done)});
