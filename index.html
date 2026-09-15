@@ -12,7 +12,7 @@
 <meta name="theme-color" content="#faf5ef">
 <!-- Bump this on every deploy. Settings reads it, and compares it against the copy
      live on Pages, so you can tell whether your phone is showing the latest. -->
-<meta name="build" content="2026-09-15.7">
+<meta name="build" content="2026-09-15.8">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,700&family=Nunito+Sans:wght@400;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
@@ -35,6 +35,8 @@ input,textarea,select{font:inherit;color:var(--ink);background:#fff;border:1.5px
 input:focus,textarea:focus,select:focus{border-color:var(--rose)}
 textarea{resize:vertical;min-height:84px}
 label{display:block;font-size:13px;font-weight:700;color:var(--plum);margin:14px 0 5px}
+.count{float:right;font-weight:700;color:var(--muted);font-variant-numeric:tabular-nums}
+.count.low{color:var(--rose-dark)}
 
 #app{max-width:560px;margin:0 auto;padding:18px 16px calc(96px + var(--safe-b))}
 .screen-title{font-size:28px;margin:6px 0 2px}
@@ -193,6 +195,20 @@ input[type=search]::-webkit-search-cancel-button{display:none}
 .idea-desc{margin:10px 0 4px;font-size:15px}
 
 /* ---- lists in user text ---- */
+/* A web app cannot actually lock orientation on iOS: screen.orientation.lock() is
+   unsupported in Safari, and a home-screen app ignores the manifest's `orientation`.
+   So the lock is this — on a phone-sized landscape viewport, ask for the phone back.
+   Height-gated, so tablets and desktop browsers (where landscape is legitimate) are
+   untouched, and it sits above every overlay including the photo viewer. */
+#rotate{display:none}
+@media (orientation:landscape) and (max-height:500px){
+  #rotate{display:flex;position:fixed;inset:0;z-index:900;background:var(--bg);
+    flex-direction:column;align-items:center;justify-content:center;gap:10px;
+    text-align:center;padding:24px calc(24px + env(safe-area-inset-left,0px))}
+  #rotate .ico{font-size:38px;line-height:1}
+  #rotate b{font-size:19px}
+  #rotate span{font-size:14px;color:var(--muted)}
+}
 .rt-p{white-space:pre-wrap}
 .rt-p+.md-list,.md-list+.rt-p{margin-top:8px}
 .md-list{list-style:none;margin:2px 0;padding:0}
@@ -252,6 +268,7 @@ hr{border:none;border-top:1px solid var(--line);margin:18px 0}
   <button id="tab-settings" onclick="setTab('settings')"><span class="ico">⚙️</span>Settings</button>
 </nav>
 <button id="fab" hidden onclick="fabTap()">+</button>
+<div id="rotate"><span class="ico">📱</span><b>Turn your phone upright</b><span>ConsoliDated is built for portrait.</span></div>
 <div id="toast"></div>
 <input type="file" id="photoInput" accept="image/*,video/*" multiple hidden>
 
@@ -285,6 +302,14 @@ const S={ready:false,cfgOk:false,authKnown:false,user:null,settings:null,places:
   tab:'ideas',ideaFilter:'all',journalMode:'album',ver:null,backup:null,
   cal:(()=>{const d=new Date();return new Date(d.getFullYear(),d.getMonth(),1)})()};
 const TITLE_MAX=80;                 // ~3 wrapped lines in a sheet head at 390px
+// maxlength stops typing without saying why, so the field says how much room is left.
+// Titles saved before the cap can exceed it, so the over case has to read sensibly too.
+function titleCount(){
+  const el=$('f-title'),out=$('f-count');if(!el||!out)return;
+  const left=TITLE_MAX-[...el.value].length;            // count characters, not UTF-16 units
+  out.textContent=left>=0?`${left} left`:`${-left} over`;
+  out.classList.toggle('low',left<=10);
+}
 const $=id=>document.getElementById(id);
 const esc=s=>(s??'').toString().replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 // Links in notes and details. Always escape FIRST, then wrap bare URLs — never the other
@@ -855,7 +880,7 @@ function openIdeaForm(id){
   openOverlay(`
    <div class="sheet-head"><button class="hbtn subtle" onclick="closeTop()">Cancel</button><h2>${i?'Edit idea':'New idea'}</h2><button class="hbtn" onclick="saveIdea('${id||''}')">Save</button></div>
    <div class="sheet-body">
-     <label>Title</label><input id="f-title" maxlength="${TITLE_MAX}" value="${esc(i?i.title:'')}" placeholder="Picnic at the botanical garden">
+     <label>Title<span class="count" id="f-count"></span></label><input id="f-title" maxlength="${TITLE_MAX}" oninput="titleCount()" value="${esc(i?i.title:'')}" placeholder="Picnic at the botanical garden">
      <label>Category</label><select id="f-cat">${CATS.map(c=>`<option ${i&&i.category===c?'selected':''}>${c}</option>`).join('')}</select>
      <div class="row2">
        <div><label>Date (optional)<button type="button" class="lnk" onclick="clearWhen()">clear</button></label>
@@ -867,7 +892,7 @@ function openIdeaForm(id){
      <label>Details<button type="button" class="lnk" id="f-tolist" onclick="toList()" ${i&&splittable(i.desc)?'':'hidden'}>split into list</button></label><textarea id="f-desc" placeholder="Anything worth remembering…" oninput="autoGrow(this,true)" onfocus="caretAfterKeyboard(this)">${esc(i?i.desc:'')}</textarea>
      <label>Location</label>${locPickerHTML()}
    </div>`);
-  drawLocPicker();
+  drawLocPicker();titleCount();
 }
 // date inputs have no clear affordance on iOS, so an entry made by mistake needs a way
 // out. Each clear touches only its own field: an end left without a start is still a
@@ -1156,12 +1181,12 @@ function openDateForm(id,fromIdea){
   openOverlay(`
    <div class="sheet-head"><button class="hbtn subtle" onclick="closeTop()">Cancel</button><h2>${d?'Edit memory':'Log a date'}</h2><button class="hbtn" onclick="saveDate('${id||''}')">Save</button></div>
    <div class="sheet-body">
-     <label>What was the date?</label><input id="f-title" maxlength="${TITLE_MAX}" value="${esc(d?d.title:(idea?idea.title:''))}" placeholder="Sunset picnic + gelato walk">
+     <label>What was the date?<span class="count" id="f-count"></span></label><input id="f-title" maxlength="${TITLE_MAX}" oninput="titleCount()" value="${esc(d?d.title:(idea?idea.title:''))}" placeholder="Sunset picnic + gelato walk">
      <label>Day</label><input type="date" id="f-day" value="${d?d.day:todayStr()}">
      <label>Stops along the way</label>${locPickerHTML()}
      <div class="hint" style="margin-top:2px">Add every place you went — with 2+ stops the map draws your route through the day. Photos are added on the next screen.</div>
    </div>`);
-  drawLocPicker();
+  drawLocPicker();titleCount();
 }
 function saveDate(id){
   const title=$('f-title').value.trim();if(!title)return toast('Give it a title');
