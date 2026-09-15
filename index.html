@@ -155,7 +155,13 @@ input[type=search]::-webkit-search-cancel-button{display:none}
 .cov-badge{position:absolute;top:4px;left:4px;background:var(--gold);color:#fff;font-size:10px;font-weight:800;padding:1px 7px;border-radius:99px}
 .arrange-btn{font-size:12.5px;font-weight:800;color:var(--rose-dark)}
 #viewer{position:fixed;inset:0;background:rgba(20,10,14,.96);z-index:700;display:flex;flex-direction:column}
-#viewer .v-img{flex:1;display:flex;align-items:center;justify-content:center;min-height:0;touch-action:none;overflow:hidden}
+#viewer .v-img{flex:1;display:flex;align-items:center;justify-content:center;min-height:0;touch-action:none;overflow:hidden;position:relative}
+#viewer .v-busy,#viewer .v-fail{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);z-index:3}
+#viewer .v-busy{pointer-events:none;width:30px;height:30px;border:3px solid rgba(255,255,255,.3);
+  border-top-color:#fff;border-radius:50%;animation:vspin .8s linear infinite;will-change:auto}
+@keyframes vspin{to{transform:translate(-50%,-50%) rotate(360deg)}}
+#viewer .v-fail{background:rgba(0,0,0,.7);color:#fff;font-size:13px;font-weight:700;
+  padding:11px 15px;border-radius:12px;text-align:center;max-width:74%;line-height:1.4}
 #viewer img,#viewer video{max-width:100%;max-height:100%;object-fit:contain;will-change:transform}
 #viewer .v-bar{display:flex;justify-content:space-between;align-items:center;padding:12px 18px calc(14px + var(--safe-b));color:#fff}
 #viewer .v-bar button{font-size:15px;font-weight:700;color:#fff;padding:8px 14px}
@@ -1122,6 +1128,7 @@ async function hardDeleteDate(id){
   if(!confirm('Delete forever? This removes the memory and its photos for both of you.'))return;
   toast('Deleting…',6000);
   for(const p of photosOf(id)){
+    if(p.fullId)fullCache.delete(p.fullId);
     await db.collection('photos').doc(p.id).delete();
     if(p.fullId)await db.collection('photoFulls').doc(p.fullId).delete();
   }
@@ -1367,6 +1374,45 @@ function playBoomerang(v){
   raf=requestAnimationFrame(tick);
   return ()=>cancelAnimationFrame(raf);
 }
+// Full-size images are their own docs (a few hundred KB each), so opening a photo means
+// a fetch and the thumbnail stands in until it lands. Two things made that read as a bad
+// photo rather than a loading one: nothing said more was coming, and the cache hung off
+// the photo object — which the `photos` snapshot rebuilds wholesale, so every reopen
+// paid the download again. Cache by fullId instead, capped, since these strings are big.
+const fullCache=new Map(),fullWait=new Map(),FULL_KEEP=12;
+function cacheFull(id,data){
+  fullCache.delete(id);fullCache.set(id,data);          // re-insert = most recently used
+  while(fullCache.size>FULL_KEEP)fullCache.delete(fullCache.keys().next().value);
+}
+function loadFull(p){
+  if(!p||!p.fullId)return Promise.resolve(null);
+  const id=p.fullId;
+  if(fullCache.has(id))return Promise.resolve(fullCache.get(id));
+  if(fullWait.has(id))return fullWait.get(id);          // two taps, one read
+  const once=()=>db.collection('photoFulls').doc(id).get().then(d=>(d.data()||{}).data||null);
+  // one retry, then let it throw: a dropped read used to be swallowed, leaving the thumb
+  // up with no way to tell a slow photo from a failed one
+  const pr=once().catch(once).then(
+    data=>{fullWait.delete(id);if(data)cacheFull(id,data);return data},
+    e=>{fullWait.delete(id);throw e});
+  fullWait.set(id,pr);
+  return pr;
+}
+// warm the neighbours so Prev/Next is instant — the same read either way, just earlier
+function vPrefetch(){
+  if(!V||V.list.length<2)return;
+  [1,-1].forEach(n=>{
+    const q=V.list[(V.ix+n+V.list.length)%V.list.length];
+    if(q&&q!==V.list[V.ix])loadFull(q).catch(()=>{});
+  });
+}
+let busyT=null;
+function vBusy(on){
+  clearTimeout(busyT);busyT=null;
+  const set=v=>{const e=$('v-busy');if(e)e.hidden=!v};
+  if(on)busyT=setTimeout(()=>set(true),180);            // no flicker on a fast read
+  else set(false);
+}
 let V=null;
 function openViewer(dateId,ix){
   V={list:photosOf(dateId),ix};
@@ -1464,24 +1510,31 @@ async function vShow(){
   const p=V.list[V.ix],box=document.querySelector('#viewer .v-img');
   $('v-count').textContent=`${V.ix+1} / ${V.list.length}`;
   // clips play as a silent loop; photos stay images (and keep pinch/pan)
-  const clip=p.kind==='clip';
+  const clip=p.kind==='clip',cached=fullCache.get(p.fullId);
   if(boomStop){boomStop();boomStop=null}
+  vBusy(false);
   // no `loop` attribute — playBoomerang drives the looping so it can reverse
-  box.innerHTML=clip?`<video id="v-img" muted playsinline poster="${p.thumb}"></video>`:`<img id="v-img">`;
-  if(!clip)$('v-img').src=p.thumb;
-  if(!p._full){try{const d=await db.collection('photoFulls').doc(p.fullId).get();p._full=(d.data()||{}).data}catch(e){}}
-  if(V&&p._full&&V.list[V.ix]===p&&$('v-img')){
-    $('v-img').src=p._full;
-    if(clip)boomStop=playBoomerang($('v-img'));
-  }
+  box.innerHTML=(clip?`<video id="v-img" muted playsinline poster="${p.thumb}"></video>`:`<img id="v-img">`)
+    +`<div id="v-busy" class="v-busy" hidden></div>`
+    +`<div id="v-fail" class="v-fail" hidden onclick="vShow()">Couldn’t load the full-size photo.<br>Tap to try again.</div>`;
+  const show=d=>{$('v-img').src=d;if(clip)boomStop=playBoomerang($('v-img'))};
+  if(cached){show(cached);return vPrefetch()}             // already here: no fuzzy stage at all
+  if(!clip)$('v-img').src=p.thumb;                        // stand-in while the full arrives
+  vBusy(true);
+  let data=null,threw=false;
+  try{data=await loadFull(p)}catch(e){threw=true}
+  if(!V||V.list[V.ix]!==p||!$('v-img'))return;            // moved on while it loaded
+  vBusy(false);
+  if(data){show(data);vPrefetch()}
+  else if(threw||p.fullId)$('v-fail').hidden=false;       // a photo with no fullId just has no full
 }
 function vNav(n){if(!V)return;V.ix=(V.ix+n+V.list.length)%V.list.length;vResetZoom();vShow()}
-function closeViewer(){const el=$('viewer');if(el){el.remove();unlockScroll()}if(boomStop){boomStop();boomStop=null}V=null}
+function closeViewer(){clearTimeout(busyT);const el=$('viewer');if(el){el.remove();unlockScroll()}if(boomStop){boomStop();boomStop=null}V=null}
 async function vDelete(){
   if(!V||!confirm('Delete this photo?'))return;
   const p=V.list[V.ix];
   await db.collection('photos').doc(p.id).delete();
-  if(p.fullId)await db.collection('photoFulls').doc(p.fullId).delete();
+  if(p.fullId){fullCache.delete(p.fullId);await db.collection('photoFulls').doc(p.fullId).delete()}
   closeViewer();toast('Photo deleted');
 }
 
