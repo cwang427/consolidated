@@ -12,7 +12,7 @@
 <meta name="theme-color" content="#faf5ef">
 <!-- Bump this on every deploy. Settings reads it, and compares it against the copy
      live on Pages, so you can tell whether your phone is showing the latest. -->
-<meta name="build" content="2026-09-15.9">
+<meta name="build" content="2026-09-16.1">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,700&family=Nunito+Sans:wght@400;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
@@ -716,8 +716,12 @@ function extMapLinks(l){
 }
 
 // ══════════ notes (shared by ideas & memories) ══════════
+// You come first on your own phone, your partner first on theirs — this was a fixed A-then-B
+// order, which only looked right to whichever of you happens to be partner A. Anywhere both
+// partners are listed should use this, not a literal ['A','B'].
+const bothKeys=()=>S.me==='B'?['B','A']:['A','B'];
 function noteBoxes(kind,id,notes){
-  return ['A','B'].map(k=>{
+  return bothKeys().map(k=>{
     const mine=k===S.me,v=(notes&&notes[k])||'';
     return `<div class="note-box"><div class="who"><span class="dot${k}"></span>${esc(pname(k))}${mine?' (you)':''}</div>
     ${mine?`<textarea id="nb-${kind}-${k}" placeholder="${kind==='idea'?'Details, links, cravings, dreams…':'What do you remember? How did it feel?'}" oninput="autoGrow(this,true)" onfocus="caretAfterKeyboard(this)" onblur="saveNote('${kind}','${id}','${k}')">${esc(v)}</textarea>`
@@ -1742,7 +1746,7 @@ function settingsView(){
   return `<h1 class="screen-title">Settings</h1>
    <div class="card"><div class="section-title" style="margin-top:0">Home base 🏠</div>
      <p class="hint" style="margin-top:0">Set your home location to display on maps.</p>
-     ${['A','B'].map((k,ix)=>{const h=homes[ix],mine=ix===myIx;return `<label>${esc(pname(k))}'s place${mine?' (you)':''}</label>
+     ${bothKeys().map(k=>{const ix=k==='A'?0:1,h=homes[ix],mine=ix===myIx;return `<label>${esc(pname(k))}'s place${mine?' (you)':''}</label>
        <div class="loc-row">${h&&h.lat!=null?`<span class="grow">📍 ${esc(h.addr||h.label)}</span>`:`<span class="grow" style="color:var(--muted)">Not set yet</span>`}${mine?`<button class="x" style="color:var(--rose-dark);font-size:14px;font-weight:700" onclick="pickHome(${ix})">${h&&h.lat!=null?'Change':'Set'}</button>`:''}</div>`}).join('')}
    </div>
    <div class="card"><div class="section-title" style="margin-top:0">Account</div>
