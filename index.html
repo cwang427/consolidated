@@ -12,7 +12,7 @@
 <meta name="theme-color" content="#faf5ef">
 <!-- Bump this on every deploy. Settings reads it, and compares it against the copy
      live on Pages, so you can tell whether your phone is showing the latest. -->
-<meta name="build" content="2026-09-16.1">
+<meta name="build" content="2026-09-16.2">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,700&family=Nunito+Sans:wght@400;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
@@ -454,10 +454,7 @@ function boot(){
   // no network (and no read quota) next time — this is what made every app restart start
   // the downloads over. Must be called before anything else touches Firestore. Fails
   // harmlessly on browsers that don't support it or when another tab holds the lock.
-  S.persist='starting';
-  try{db.enablePersistence({synchronizeTabs:true})
-    .then(()=>{S.persist='on'},e=>{S.persist='off ('+errCode(e)+')'})}
-  catch(e){S.persist='off ('+errCode(e)+')'}
+  try{db.enablePersistence({synchronizeTabs:true}).catch(()=>{})}catch(e){}
   firebase.auth().onAuthStateChanged(async u=>{S.authKnown=true;S.user=u;if(u){await applyIdentity(u);subscribe()}render()});
 }
 // on first load, open the journal on the newest month that has memories (falling back to
@@ -528,28 +525,6 @@ async function checkBuild(){
 }
 function paintVer(){const el=$('verline');if(el)el.innerHTML=verHTML()}
 
-// Photo loading has now been misdiagnosed twice from the outside, so this reports what a
-// real read actually does on this phone: whether persistence is answering, whether the
-// server is, and how long each takes. Read-only, one photo, run by hand.
-function paintDiag(t){const el=$('diagline');if(el){el.innerHTML=t;el.hidden=!t}}
-async function photoSelfTest(){
-  const p=S.photos.find(x=>x.fullId);
-  if(!p)return paintDiag('No photos to test with yet.');
-  const ref=db.collection('photoFulls').doc(p.fullId),out=[];
-  const time=async(label,pr)=>{
-    const t0=Date.now();
-    try{const d=await capped(pr,20000,label);
-      const n=((d&&d.data()||{}).data||'').length;
-      out.push(`${label}: ${n?Math.round(n/1024)+' KB':'empty'} in ${Date.now()-t0}ms`);
-    }catch(e){out.push(`${label}: ${esc(errCode(e))} after ${Date.now()-t0}ms`)}
-    paintDiag(out.join('<br>'));
-  };
-  paintDiag('Running…');
-  out.push(`persistence: ${S.persist||'unknown'}`);
-  await time('on-disk',ref.get({source:'cache'}));
-  await time('server',ref.get({source:'server'}));
-  await time('default',ref.get());
-}
 function verHTML(){
   const v=S.ver,me=`<b>${esc(BUILD)}</b>`;
   if(v==='…')return `${me} · <span style="color:var(--muted)">checking…</span>`;
@@ -1757,9 +1732,7 @@ function settingsView(){
      <div id="backupbox">${backupHTML()}</div></div>
    <div class="card"><div class="section-title" style="margin-top:0">Version</div>
      <p class="hint" style="margin-top:0">Which build this phone is showing, checked against what’s deployed.</p>
-     <div id="verline" class="hint" style="margin-top:0">${verHTML()}</div>
-     <div class="hint" style="margin-top:6px"><button class="lnk" style="margin:0" onclick="photoSelfTest()">test photo loading</button></div>
-     <div id="diagline" class="hint" style="margin-top:6px" hidden></div></div>`;
+     <div id="verline" class="hint" style="margin-top:0">${verHTML()}</div></div>`;
 }
 function setMe(k){S.me=k;localStorage.setItem('dj_me',k);render();toast(`Hi, ${pname(k)}!`)}
 function pickHome(ix){
