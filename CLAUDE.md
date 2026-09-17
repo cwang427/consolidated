@@ -27,6 +27,22 @@ A private two-person date-journal web app: shared date-idea list (a wishlist, de
 
 **Data safety:** all user data lives in Firestore, none in this repo. Never write migrations that rewrite existing docs without explicit user sign-off, and remind the user to use Settings → Download backup before schema-touching changes. There is currently no restore-from-backup feature (known gap).
 
+## Design tokens
+
+`:root` holds **all** of colour, radius, type (families, weights, size scale) and the three
+rhythm knobs (`--gutter`, `--card-pad`, `--card-gap`). Use a token rather than a literal for
+any new rule — the point is that a restyle is a table of values, not an archaeology dig
+through 250 rules. Sizes outside the scale are one-offs on single ornamental elements
+(hero/empty-state emoji, FAB, tab icons, viewer ✕) and are listed in `DESIGN.md`, the brief
+written for an outside designer: keep the two in step when tokens change.
+
+Two gotchas from building it: a token whose value contains the literal it replaces will
+self-reference if you rewrite declarations by search-and-replace (`--font-body:var(--font-body)`
+is circular, silently invalid, and drops the whole app to Times New Roman) — check `:root`
+after any bulk edit. And a refactor that claims to be visually neutral should be *proved*:
+render the screens before and after and diff the images, rather than trusting that the tests
+pass. That is how the Times New Roman bug was caught.
+
 ## Code conventions / gotchas
 
 - **Wherever both partners are listed, you come first** — `bothKeys()`, never a literal `['A','B']`. That covers the reflection/notes boxes and the Settings home rows. The fixed order only ever looked right to whichever partner is A; the other saw their partner's box above their own everywhere. Ordering is presentational only: the partner key still decides where a note saves (`saveNote`) and which home a row edits (`pickHome(k==='A'?0:1)`), so never derive an index from the display position.
