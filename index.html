@@ -12,7 +12,7 @@
 <meta name="theme-color" content="#faf5ef">
 <!-- Bump this on every deploy. Settings reads it, and compares it against the copy
      live on Pages, so you can tell whether your phone is showing the latest. -->
-<meta name="build" content="2026-09-17.1">
+<meta name="build" content="2026-09-21.1">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,700&family=Nunito+Sans:wght@400;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
@@ -125,6 +125,8 @@ label{display:block;font-size:var(--fs-ms);font-weight:var(--w-bold);color:var(-
 .sheet textarea{resize:none;overflow:hidden}
 .note-box .ro{color:var(--ink);font-size:var(--fs-lg);min-height:22px}
 .note-box .ro.dim{color:var(--muted);font-style:italic}
+.note-box .tag{margin-left:auto;font-size:var(--fs-2xs);font-weight:var(--w-heavy);color:var(--muted);
+  background:var(--bg);border:1px solid var(--line);border-radius:var(--r-pill);padding:1px 8px;letter-spacing:.04em}
 
 /* ---- journal ---- */
 .seg{display:flex;background:#f1e9df;border-radius:var(--r-md);padding:3px;margin-bottom:14px}
@@ -574,12 +576,12 @@ function openOverlay(inner){
   const el=document.createElement('div');el.className='overlay';
   el.innerHTML=`<div class="sheet">${inner}</div>`;
   el.addEventListener('click',e=>{if(e.target===el)closeTop()});
-  document.body.appendChild(el);overlayStack.push(el);lockScroll();fitOverlays();
+  document.body.appendChild(el);overlayStack.push(el);sheetGen++;lockScroll();fitOverlays();
   requestAnimationFrame(fitOverlays);setTimeout(fitOverlays,120);   // in case the viewport was mid-change
   growAll(el);setTimeout(()=>growAll(el),50); // again once webfonts settle
   return el;
 }
-function closeTop(){const el=overlayStack.pop();if(el){el.remove();unlockScroll()}}
+function closeTop(){const el=overlayStack.pop();if(el){sheetGen++;el.remove();unlockScroll()}}
 // grow a textarea to fit its content: a nested scrollbar in a 70px box makes both
 // reading a long reflection and keeping track of what you've typed needlessly hard.
 //
@@ -672,6 +674,11 @@ function growAll(root){(root||document).querySelectorAll('.sheet textarea').forE
 function closeAll(){while(overlayStack.length)closeTop()}
 
 // ══════════ maps ══════════
+// Bumped whenever a sheet opens or closes. A deferred draw (the setTimeout Leaflet ones)
+// captures it and bails if it no longer matches: checking only that the element exists
+// isn't enough, because closing and reopening the same sheet quickly gives the stale timer
+// a *fresh* container to initialise, and the new sheet's own draw then finds it taken.
+let sheetGen=0;
 function mkMap(elId){
   const m=L.map(elId,{zoomControl:false,scrollWheelZoom:false});
   L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© OpenStreetMap'}).addTo(m);
@@ -711,18 +718,72 @@ function extMapLinks(l){
 // order, which only looked right to whichever of you happens to be partner A. Anywhere both
 // partners are listed should use this, not a literal ['A','B'].
 const bothKeys=()=>S.me==='B'?['B','A']:['A','B'];
-function noteBoxes(kind,id,notes){
+// Reflections on a memory are sealed: neither partner reads the other's until both have
+// deliberately shared. Autosave alone can't gate this — one keystroke and closing the sheet
+// would already count as "written" — so sharing is its own button writing its own field.
+// Idea notes are *not* gated: those are shared planning, meant to be read as they're typed.
+const shared=(sealed,k)=>!!(sealed&&sealed[k]);
+// `blind` is what switches the gate on for a memory, not the presence of `sealed`. Those
+// have to be separate: a memory written before this feature has neither, and must stay
+// readable, while a brand-new memory also has neither and must NOT show an unshared
+// reflection. `blind` is set the first time anything is written to a memory's reflections
+// from this version on, and everything already written at that moment is grandfathered in
+// — the feature never retroactively hides words a couple had already read.
+function blindPatch(d){
+  if(d.blind)return null;
+  const now=Date.now(),seal={};
+  ['A','B'].forEach(k=>{if(((d.refl||{})[k]||'').trim())seal[k]=now});
+  return {blind:true,seal};
+}
+// A memory written before this existed has no `sealed` map, and its reflections stay
+// readable rather than retroactively hiding. The first share on such a memory carries the
+// partner's existing text across with it, so creating the field can't hide what was already
+// read — no migration, and nothing rewritten behind the couple's back.
+function shareRefl(id,k){
+  const el=$('nb-date-'+k),d=S.dates.find(x=>x.id===id);if(!el||!d)return;
+  const v=el.value.trim();
+  if(!v)return toast('Write something first');
+  const b=blindPatch(d),seal=Object.assign({},b?b.seal:null,{[k]:Date.now()});
+  db.collection('dates').doc(id).set({refl:{[k]:v},blind:true,sealed:seal},{merge:true}).then(()=>{
+    d.refl=Object.assign({},d.refl,{[k]:v});          // an open sheet isn't redrawn by snapshots
+    d.blind=true;d.sealed=Object.assign({},d.sealed,seal);
+    paintRefl(id);toast('Shared ✓');
+  });
+}
+function paintRefl(id){
+  const el=$('reflbox'),d=S.dates.find(x=>x.id===id);
+  if(el&&d)el.innerHTML=noteBoxes('date',id,d.refl,d.sealed,d.blind);
+}
+function noteBoxes(kind,id,notes,sealed,blind){
+  const gate=kind==='date'&&!!blind;
   return bothKeys().map(k=>{
-    const mine=k===S.me,v=(notes&&notes[k])||'';
-    return `<div class="note-box"><div class="who"><span class="dot${k}"></span>${esc(pname(k))}${mine?' (you)':''}</div>
-    ${mine?`<textarea id="nb-${kind}-${k}" placeholder="${kind==='idea'?'Details, links, cravings, dreams…':'What do you remember? How did it feel?'}" oninput="autoGrow(this,true)" onfocus="caretAfterKeyboard(this)" onblur="saveNote('${kind}','${id}','${k}')">${esc(v)}</textarea>`
-          :`<div class="ro ${v?'':'dim'}">${v?richText(v):'Nothing written yet'}</div>`}</div>`;
+    const mine=k===S.me,v=(notes&&notes[k])||'',other=otherOf(k);
+    const head=`<div class="who"><span class="dot${k}"></span>${esc(pname(k))}${mine?' (you)':''}`
+      +`${gate&&shared(sealed,k)?'<span class="tag">shared</span>':''}</div>`;
+    if(mine)return `<div class="note-box">${head}
+      <textarea id="nb-${kind}-${k}" placeholder="${kind==='idea'?'Details, links, cravings, dreams…':'What do you remember? How did it feel?'}" oninput="autoGrow(this,true)" onfocus="caretAfterKeyboard(this)" onblur="saveNote('${kind}','${id}','${k}')">${esc(v)}</textarea>
+      ${!gate?'':shared(sealed,k)
+        ?`<div class="hint">Shared with ${esc(pname(other))} — later edits show up straight away.</div>`
+        :`<button class="btn small" style="margin-top:10px" onclick="shareRefl('${id}','${k}')">Share with ${esc(pname(other))}</button>
+          <div class="hint">Kept private until you share. You'll see ${esc(pname(other))}'s once you've both shared.</div>`}
+      </div>`;
+    // the partner's box — their words must not reach the page at all while sealed
+    if(gate&&!(shared(sealed,k)&&shared(sealed,S.me)))
+      return `<div class="note-box">${head}<div class="ro dim">${shared(sealed,k)
+        ? `🔒 ${esc(pname(k))} has shared theirs — write and share yours to read it`
+        : `Nothing shared yet`}</div></div>`;
+    return `<div class="note-box">${head}<div class="ro ${v?'':'dim'}">${v?richText(v):'Nothing written yet'}</div></div>`;
   }).join('');
 }
 function saveNote(kind,id,k){
   const el=$(`nb-${kind}-${k}`);if(!el)return;
   const coll=kind==='idea'?'ideas':'dates',field=kind==='idea'?'notes':'refl';
-  db.collection(coll).doc(id).set({[field]:{[k]:el.value.trim()}},{merge:true}).then(()=>toast('Saved ✓'));
+  const data={[field]:{[k]:el.value.trim()}};
+  if(kind==='date'){
+    const d=S.dates.find(x=>x.id===id),b=d&&blindPatch(d);
+    if(b){data.blind=true;data.sealed=b.seal;if(d){d.blind=true;d.sealed=Object.assign({},d.sealed,b.seal)}}
+  }
+  db.collection(coll).doc(id).set(data,{merge:true}).then(()=>toast('Saved ✓'));
 }
 
 // ══════════ starter list (one-tap import on first run) ══════════
@@ -845,7 +906,8 @@ function openIdea(id){
      <button class="btn" onclick="openDateForm(null,'${id}')">We did this — log it</button>
      <button class="btn danger" onclick="delIdea('${id}')">Delete idea</button>
    </div>`);
-  if(i.loc)setTimeout(()=>{if(!$('ideamap'))return;const m=mkMap('ideamap');const pts=homeMarkers(m);addNumPin(m,i.loc,0,1);pts.push([i.loc.lat,i.loc.lng]);fit(m,pts)},30);
+  const gen=sheetGen;
+  if(i.loc)setTimeout(()=>{if(gen!==sheetGen||!$('ideamap'))return;const m=mkMap('ideamap');const pts=homeMarkers(m);addNumPin(m,i.loc,0,1);pts.push([i.loc.lat,i.loc.lng]);fit(m,pts)},30);
 }
 function delIdea(id){
   if(!confirm('Delete this idea? (Logged memories are kept.)'))return;
@@ -1191,11 +1253,12 @@ function openDate(id){
        <div class="loc-list" style="margin-top:8px">${locs.map((l,ix)=>`<div class="loc-row">${locs.length>1?`<span class="n">${ix+1}</span>`:'📍'}<span class="grow${l.addr&&l.addr!==labelOf(l)?' two':''}"><span class="loc-name">${esc(labelOf(l))}</span>${l.addr&&l.addr!==labelOf(l)?`<span class="loc-sub">${esc(l.addr)}</span>`:''}</span></div>`).join('')}</div>`:''}
      <div id="psec">${photoSectionHTML(id)}</div>
      <div class="section-title">Our thoughts</div>
-     ${noteBoxes('date',id,d.refl)}
+     <div id="reflbox">${noteBoxes('date',id,d.refl,d.sealed,d.blind)}</div>
      <button class="btn danger" onclick="delDate('${id}')">Delete this memory</button>
    </div>`);
+  const gen=sheetGen;
   if(locs.length)setTimeout(()=>{
-    if(!$('datemap'))return; // sheet closed before the deferred draw ran
+    if(gen!==sheetGen||!$('datemap'))return; // sheet closed (or reopened) before the deferred draw ran
     const m=mkMap('datemap');const pts=homeMarkers(m);
     locs.forEach((l,ix)=>{addNumPin(m,l,ix,locs.length);pts.push([l.lat,l.lng])});
     if(locs.length>1)L.polyline(locs.map(l=>[l.lat,l.lng]),{color:'#a83a55',weight:3,dashArray:'6 8'}).addTo(m);
