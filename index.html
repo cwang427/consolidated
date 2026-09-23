@@ -12,7 +12,7 @@
 <meta name="theme-color" content="#faf5ef">
 <!-- Bump this on every deploy. Settings reads it, and compares it against the copy
      live on Pages, so you can tell whether your phone is showing the latest. -->
-<meta name="build" content="2026-09-23.1">
+<meta name="build" content="2026-09-23.2">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,700&family=Nunito+Sans:wght@400;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
@@ -752,7 +752,12 @@ function shareRefl(id,k){
 }
 function paintRefl(id){
   const el=$('reflbox'),d=S.dates.find(x=>x.id===id);
-  if(el&&d)el.innerHTML=noteBoxes('date',id,d.refl,d.sealed,d.blind);
+  if(!el||!d)return;
+  el.innerHTML=noteBoxes('date',id,d.refl,d.sealed,d.blind);
+  // The textarea here is brand new, and `.sheet textarea` is overflow:hidden — without
+  // re-growing it, it sits at its 70px min-height with the rest of the text clipped and
+  // no way to scroll to it. Any innerHTML repaint containing a textarea has to do this.
+  el.querySelectorAll('textarea').forEach(autoGrow);
 }
 function noteBoxes(kind,id,notes,sealed,blind){
   const gate=kind==='date'&&!!blind;
