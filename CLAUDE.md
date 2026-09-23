@@ -30,9 +30,13 @@ a hidden reflection is never rendered into the page at all (there's a test for t
 hiding it with CSS would be theatre). Two flags, and they have to be separate: `blind` arms
 the gate for a memory, `sealed[k]` records that one partner has shared. Absence of `sealed`
 can't arm it, because "written before this feature" and "written just now and not shared"
-would look identical and mean opposite things. `blind` is set the first time anything is
-written to a memory's reflections (`saveNote` as well as `shareRefl`, via `blindPatch`),
-and everything already written at that moment is grandfathered in — the feature never
+would look identical and mean opposite things. A memory created from this version on is born with `blind:true`,
+so Share is there on the very first visit — waiting for the first save to arm it meant the
+button only appeared after closing and reopening the memory, which is exactly how the bug
+was reported. For memories that predate the flag, `blind` is set the first time anything is
+written to their reflections (`saveNote` as well as `shareRefl`, via `blindPatch`), that
+save repaints `#reflbox` so the change shows without a reopen, and everything already
+written at that moment is grandfathered in — the feature never
 retroactively hides words the couple had already read, and no migration rewrites their
 docs. Idea notes are deliberately *not* gated: those are shared planning, meant to be read
 as they're typed. There is no minimum length, on purpose — a one-word share only shortchanges
