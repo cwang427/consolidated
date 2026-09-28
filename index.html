@@ -12,7 +12,7 @@
 <meta name="theme-color" content="#faf5ef">
 <!-- Bump this on every deploy. Settings reads it, and compares it against the copy
      live on Pages, so you can tell whether your phone is showing the latest. -->
-<meta name="build" content="2026-09-28.1">
+<meta name="build" content="2026-09-28.2">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,700&family=Nunito+Sans:wght@400;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
@@ -979,7 +979,7 @@ function locPickerHTML(){return `<div id="locwrap" class="loc-list"></div>
  ${F&&F.showAddr?'<div id="loc-addr" class="hint" style="margin:0 0 8px" hidden></div>':''}
  <div class="searchrow"><input id="loc-q" placeholder="Search a place or address" oninput="locSuggest()" onkeydown="if(event.key==='Enter'){event.preventDefault();locSearch()}"><button onclick="locSearch()">Search</button></div>
  <div id="loc-results" class="results"></div>
- <div class="hint">Search above, or tap the map to drop a pin.</div>
+ <div class="hint">Search above, or tap the map to drop a pin</div>
  <div id="pickmap" class="map" style="height:180px;margin-top:8px"></div>`}
 function drawLocPicker(){
   const wrap=$('locwrap');if(!wrap)return;
@@ -996,7 +996,7 @@ function drawLocPicker(){
       +(home?'':`<button class="x" title="Rename" onclick="renameLoc(${ix})">✏️</button>`)
       +(F.max>1&&F.locs.length>1?`<button class="x" onclick="mvLoc(${ix},-1)" ${ix===0?'disabled style="opacity:.25"':''}>▲</button><button class="x" onclick="mvLoc(${ix},1)" ${ix===F.locs.length-1?'disabled style="opacity:.25"':''}>▼</button>`:'')
       +`<button class="x" onclick="rmLoc(${ix})">✕</button></div>`;
-  }).join('')+((!home&&F.locs.length)?`<div class="hint" style="margin-top:0">Tap ✏️ to name a stop something you'll recognize later.</div>`:'');
+  }).join('')+((!home&&F.locs.length)?`<div class="hint" style="margin-top:0">Tap ✏️ to name a stop something you'll recognize later</div>`:'');
   setTimeout(()=>{
     const el=$('pickmap');if(!el)return;
     if(pickMap){try{pickMap.remove()}catch(e){}pickMap=null}
@@ -1813,12 +1813,12 @@ function settingsView(){
   const myIx=S.me==='A'?0:1;
   return `<h1 class="screen-title">Settings</h1>
    <div class="card"><div class="section-title" style="margin-top:0">Home base 🏠</div>
-     <p class="hint" style="margin-top:0">Set your home location to display on maps.</p>
+     <p class="hint" style="margin-top:0">Set your home location to display on maps</p>
      ${bothKeys().map(k=>{const ix=k==='A'?0:1,h=homes[ix],mine=ix===myIx;return `<label>${esc(pname(k))}'s place${mine?' (you)':''}</label>
        <div class="loc-row">${h&&h.lat!=null?`<span class="grow">📍 ${esc(h.addr||h.label)}</span>`:`<span class="grow" style="color:var(--muted)">Not set yet</span>`}${mine?`<button class="x" style="color:var(--rose-dark);font-size:14px;font-weight:700" onclick="pickHome(${ix})">${h&&h.lat!=null?'Change':'Set'}</button>`:''}</div>`}).join('')}
    </div>
    <div class="card"><div class="section-title" style="margin-top:0">Account</div>
-     <p class="hint" style="margin-top:0">Signed in as ${esc(S.user.email||'')}.</p>
+     <p class="hint" style="margin-top:0">Signed in as ${esc(S.user.email||'')}</p>
      <button class="btn small ghost" onclick="signOut()">Sign out</button></div>
    <div class="card"><div class="section-title" style="margin-top:0">Backup</div>
      <p class="hint" style="margin-top:0">Save all current data as JSON</p>
