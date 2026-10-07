@@ -12,7 +12,7 @@
 <meta name="theme-color" content="#faf5ef">
 <!-- Bump this on every deploy. Settings reads it, and compares it against the copy
      live on Pages, so you can tell whether your phone is showing the latest. -->
-<meta name="build" content="2026-10-07.2">
+<meta name="build" content="2026-10-07.3">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,700&family=Nunito+Sans:wght@400;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
@@ -174,6 +174,13 @@ label{display:block;font-size:var(--fs-ms);font-weight:var(--w-bold);color:var(-
   background:rgba(0,0,0,.25);color:transparent;font-size:var(--fs-sm);font-weight:var(--w-heavy);display:flex;align-items:center;justify-content:center}
 .pick.on .pick-mark{background:var(--rose);color:#fff}
 .pick.on img{opacity:.72}
+.selbar{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;display:flex;align-items:center;gap:14px;
+  background:var(--plum);color:#fff;border-radius:var(--r-md);padding:9px 14px;margin:0 0 8px;box-shadow:var(--shadow)}
+.selbar b{flex:1;font-size:var(--fs-md)}
+.selbar button{color:#fff;font-size:var(--fs-md);font-weight:var(--w-bold)}
+.selbar button:disabled{opacity:.4}
+.selbar .del{color:#ffb3c1}
+.move-row.new{background:none;border-style:dashed;color:var(--rose-dark)}
 .move-row{display:block;width:100%;text-align:left;background:var(--card);border:1px solid var(--line);border-radius:var(--r-md);
   padding:14px;font-size:var(--fs-xl);font-weight:var(--w-bold);color:var(--ink);margin-bottom:8px;overflow-wrap:anywhere}
 .ph-badge{position:absolute;right:5px;bottom:5px;background:rgba(61,44,51,.72);color:#fff;font-size:var(--fs-2xs);font-weight:var(--w-heavy);padding:2px 7px;border-radius:var(--r-pill);pointer-events:none}
@@ -558,7 +565,7 @@ function render(){
 // same-screen redraws while an input in #app has focus. Any user-initiated navigation
 // therefore has to drop focus first, or the tap would silently do nothing.
 function blurActive(){const a=document.activeElement;if(a&&a.blur)a.blur()}
-function setTab(t){blurActive();S.tab=t;render();window.scrollTo(0,0);if(t==='settings')checkBuild()}
+function setTab(t){blurActive();SEL=null;S.tab=t;render();window.scrollTo(0,0);if(t==='settings')checkBuild()}
 
 // ══════════ which build am I looking at? ══════════
 // An installed PWA keeps serving whatever HTML iOS last cached, so "did my change land?"
@@ -1292,7 +1299,7 @@ function saveDate(id){
 let curDateId=null;
 function openDate(id){
   const d=S.dates.find(x=>x.id===id);if(!d)return;
-  curDateId=id;arrangeMode=false;
+  curDateId=id;arrangeMode=false;SEL=null;
   const locs=d.locs||[];
   openOverlay(`
    <div class="sheet-head"><button class="hbtn subtle" onclick="curDateId=null;closeTop()">✕</button><h2>${esc(d.title)}</h2><button class="hbtn" onclick="openDateForm('${id}')">Edit</button></div>
@@ -1340,13 +1347,22 @@ async function hardDeleteDate(id){
 // ══════════ photos ══════════
 let arrangeMode=false;
 function coverOf(d){const ph=photosOf(d.id);return ph.find(p=>p.id===d.coverId)||ph[0]}
+const clipBadge=p=>p.kind==='clip'?`<span class="ph-badge">▶${p.secs?' '+p.secs+'s':''}</span>`:'';
+// One cell, in either mode: normally a tap opens the viewer; while selecting it ticks.
+function cellHTML(owner,p,ix){
+  if(selecting(owner))return `<div class="ph-cell pick${SEL.ids.has(p.id)?' on':''}" data-id="${p.id}" onclick="selToggle(this)"><img src="${p.thumb}">${clipBadge(p)}<span class="pick-mark">✓</span></div>`;
+  return p.kind==='clip'
+    ?`<div class="ph-cell" onclick="openViewer('${owner}',${ix})"><img src="${p.thumb}">${clipBadge(p)}</div>`
+    :`<img src="${p.thumb}" onclick="openViewer('${owner}',${ix})">`;
+}
 function photoSectionHTML(dateId){
   const ph=photosOf(dateId);
-  const coll=collOf(dateId);
-  return `<div class="section-title">${coll?'Photos':'Photos from the day'} ${ph.length>1?`<button class="arrange-btn" onclick="toggleArrange()">${arrangeMode?'Done':'Arrange'}</button>`:''}</div>
+  const coll=collOf(dateId),sel=selecting(dateId);
+  return `<div class="section-title">${coll?'Photos':'Photos from the day'} <span>${!sel&&!arrangeMode&&ph.length?`<button class="arrange-btn" onclick="selStart('${dateId}')">Select</button>`:''}${!sel&&ph.length>1?`<button class="arrange-btn" style="margin-left:14px" onclick="toggleArrange()">${arrangeMode?'Done':'Arrange'}</button>`:''}</span></div>
+   ${sel?selBarHTML(dateId):''}
    ${arrangeMode?`<p class="hint" style="margin:0 0 6px">‹ › to reorder · ★ picks the ${coll?'':'calendar '}cover</p>`:''}
    <div id="pgrid" class="photo-grid">${photoGridHTML(dateId)}</div>
-   ${coll&&!arrangeMode&&photosOf(ALBUM).length?`<button class="btn small ghost" style="margin-top:12px" onclick="openCollPick('${dateId}')">Add from Album</button>`:''}`;
+   ${coll&&!arrangeMode&&!sel&&photosOf(ALBUM).length?`<button class="btn small ghost" style="margin-top:12px" onclick="openCollPick('${dateId}')">Add from Album</button>`:''}`;
 }
 function photoGridHTML(dateId){
   const ph=photosOf(dateId),d=S.dates.find(x=>x.id===dateId)||collOf(dateId);
@@ -1356,10 +1372,8 @@ function photoGridHTML(dateId){
       ${isCover?'<span class="cov-badge">★ cover</span>':''}${p.kind==='clip'?`<span class="ph-badge">▶${p.secs?' '+p.secs+'s':''}</span>`:''}
       <div class="arr-bar"><button onclick="movePhoto('${dateId}',${ix},-1)" ${ix===0?'disabled':''}>‹</button><button class="${isCover?'on':''}" onclick="setCover('${dateId}','${p.id}')">★</button><button onclick="movePhoto('${dateId}',${ix},1)" ${ix===ph.length-1?'disabled':''}>›</button></div></div>`;
   }).join('');
-  return ph.map((p,ix)=>p.kind==='clip'
-    ?`<div class="ph-cell" onclick="openViewer('${dateId}',${ix})"><img src="${p.thumb}"><span class="ph-badge">▶${p.secs?' '+p.secs+'s':''}</span></div>`
-    :`<img src="${p.thumb}" onclick="openViewer('${dateId}',${ix})">`).join('')
-   +`<div class="add-photo" onclick="pickPhotos('${dateId}')"><span class="plus">＋</span>Add photos or clip</div>`;
+  return ph.map((p,ix)=>cellHTML(dateId,p,ix)).join('')
+   +(selecting(dateId)?'':`<div class="add-photo" onclick="pickPhotos('${dateId}')"><span class="plus">＋</span>Add photos or clip</div>`);
 }
 function albumView(){
   const loose=photosOf(ALBUM),colls=S.colls;
@@ -1369,10 +1383,9 @@ function albumView(){
   <div class="section-title" style="margin-top:4px">Collections<button class="arrange-btn" onclick="openCollForm()">+ New</button></div>
   ${colls.length?`<div class="coll-grid">${colls.map(collCardHTML).join('')}</div>`
     :`<p class="hint" style="margin-top:0">Group related photos under one title and description</p>`}
-  <div class="section-title">Photos</div>
-  ${loose.length?`<div class="photo-grid">${loose.map((p,ix)=>p.kind==='clip'
-      ?`<div class="ph-cell" onclick="openViewer('${ALBUM}',${ix})"><img src="${p.thumb}"><span class="ph-badge">▶${p.secs?' '+p.secs+'s':''}</span></div>`
-      :`<img src="${p.thumb}" onclick="openViewer('${ALBUM}',${ix})">`).join('')}</div>`
+  <div class="section-title">Photos${loose.length&&!selecting(ALBUM)?`<button class="arrange-btn" onclick="selStart(ALBUM)">Select</button>`:''}</div>
+  ${selecting(ALBUM)?selBarHTML(ALBUM):''}
+  ${loose.length?`<div class="photo-grid">${loose.map((p,ix)=>cellHTML(ALBUM,p,ix)).join('')}</div>`
     :total?`<p class="hint" style="margin-top:0">Tap + to add photos outside a collection</p>`
     :`<div class="empty"><div class="big">🖼️</div>No photos yet.<br>Tap <b>+</b> to add photos that don't belong to one date.</div>`}`;
 }
@@ -1385,7 +1398,7 @@ function collCardHTML(c){
 // ══════════ album collections ══════════
 function openColl(id){
   const c=collOf(id);if(!c)return;
-  curDateId=id;arrangeMode=false;            // reuses the memory photo section, keyed by owner
+  curDateId=id;arrangeMode=false;SEL=null;   // reuses the memory photo section, keyed by owner
   openOverlay(`
    <div class="sheet-head"><button class="hbtn subtle" onclick="curDateId=null;closeTop()">✕</button><h2>${esc(c.title)}</h2><button class="hbtn" onclick="openCollForm('${id}')">Edit</button></div>
    <div class="sheet-body">
@@ -1452,18 +1465,82 @@ function collPickSave(id){
   S.photos.forEach(p=>{if(pickSel.has(p.id)){p.dateId=id;delete p.order}});
   b.commit().then(()=>{closeTop();refreshPhotoGrid();render();toast(`${ids.length} added ✓`)});
 }
-function movePhotoTo(pid,to){
-  const p=S.photos.find(x=>x.id===pid);
-  db.collection('photos').doc(pid).set({dateId:to,order:firebase.firestore.FieldValue.delete()},{merge:true});
-  if(p){p.dateId=to;delete p.order}
-  closeTop();refreshPhotoGrid();render();
-  toast(to===ALBUM?'Moved to the Album':'Moved to '+((collOf(to)||{}).title||'the collection'));
+// ══════════ selecting several photos ══════════
+// One selection at a time, keyed by the grid it belongs to (a memory, ALBUM or a collection),
+// so a snapshot redraw keeps the ticks. Actions only ever touch photos that still exist in
+// that grid: a merge-write to a photo the other partner has just deleted would quietly
+// recreate it as a thumbnail-less stub.
+let SEL=null,moveIds=[];
+const selecting=owner=>!!SEL&&SEL.owner===owner;
+const selLive=()=>SEL?photosOf(SEL.owner).filter(p=>SEL.ids.has(p.id)):[];
+const canMove=owner=>owner===ALBUM||!!collOf(owner);
+function selRepaint(){refreshPhotoGrid();render()}
+function selStart(owner){arrangeMode=false;SEL={owner,ids:new Set()};selRepaint()}
+function selEnd(){SEL=null;selRepaint()}
+function selBarHTML(owner){
+  const n=SEL.ids.size,all=n&&n===photosOf(owner).length;
+  return `<div id="selbar" class="selbar"><button onclick="selEnd()">Cancel</button><b>${n} selected</b>
+    <button onclick="selAll()">${all?'None':'All'}</button>${canMove(owner)?`<button onclick="selMove()" ${n?'':'disabled'}>Move</button>`:''}<button class="del" onclick="selDelete()" ${n?'':'disabled'}>Delete</button></div>`;
+}
+function paintSelBar(){const b=$('selbar');if(b&&SEL)b.outerHTML=selBarHTML(SEL.owner)}
+function selToggle(el){
+  if(!SEL)return;const id=el.dataset.id;
+  SEL.ids.has(id)?SEL.ids.delete(id):SEL.ids.add(id);
+  el.classList.toggle('on',SEL.ids.has(id));paintSelBar();     // in place: no redraw, no scroll jump
+}
+function selAll(){
+  if(!SEL)return;const ph=photosOf(SEL.owner);
+  SEL.ids=SEL.ids.size===ph.length?new Set():new Set(ph.map(p=>p.id));selRepaint();
+}
+async function selDelete(){
+  const ph=selLive(),n=ph.length;if(!n)return;
+  if(!confirm(`Delete ${n} photo${n===1?'':'s'}? This can't be undone.`))return;
+  try{
+    for(let i=0;i<n;i+=200){                 // a batch holds 500 writes; each photo is two
+      const b=db.batch();
+      ph.slice(i,i+200).forEach(p=>{b.delete(db.collection('photos').doc(p.id));
+        if(p.fullId){b.delete(db.collection('photoFulls').doc(p.fullId));fullCache.delete(p.fullId)}});
+      await b.commit();
+    }
+  }catch(e){console.error(e);return toast('Couldn’t delete those photos ('+errCode(e)+')',3500)}
+  const gone=new Set(ph.map(p=>p.id));S.photos=S.photos.filter(p=>!gone.has(p.id));
+  SEL=null;selRepaint();toast(`${n} photo${n===1?'':'s'} deleted`);
+}
+function selMove(){const ph=selLive();if(ph.length)openMoveSheet(ph.map(p=>p.id),SEL.owner)}
+function openMoveSheet(ids,from){
+  moveIds=ids;
+  const opts=[{id:ALBUM,title:'Album'}].concat(S.colls).filter(o=>o.id!==from),n=ids.length;
+  openOverlay(`
+   <div class="sheet-head"><button class="hbtn subtle" onclick="closeTop()">Cancel</button><h2>Move ${n>1?n+' photos':'photo'} to…</h2></div>
+   <div class="sheet-body">${opts.map(o=>`<button class="move-row" onclick="moveDo('${o.id}')">${o.id===ALBUM?'🖼️ Album, outside any collection':'📁 '+esc(o.title)}</button>`).join('')}
+     <button class="move-row new" onclick="moveToNew()">＋ New collection…</button></div>`);
+}
+function moveToNew(){
+  const t=prompt('Name the new collection:','');if(t===null)return;
+  const title=t.trim().slice(0,TITLE_MAX);if(!title)return toast('Give it a title');
+  const row={title,desc:'',coverId:null,created:Date.now()};
+  db.collection('collections').add(row).then(r=>{if(!collOf(r.id))S.colls.unshift({id:r.id,...row});moveDo(r.id)});
+}
+async function moveDo(to){
+  const live=new Set(S.photos.map(p=>p.id)),ids=moveIds.filter(id=>live.has(id)),n=ids.length;
+  if(!n){closeTop();return toast('Those photos are no longer here')}
+  try{
+    for(let i=0;i<n;i+=400){
+      const b=db.batch();
+      ids.slice(i,i+400).forEach(id=>b.set(db.collection('photos').doc(id),{dateId:to,order:firebase.firestore.FieldValue.delete()},{merge:true}));
+      await b.commit();
+    }
+  }catch(e){console.error(e);return toast('Couldn’t move those photos ('+errCode(e)+')',3500)}
+  S.photos.forEach(p=>{if(ids.includes(p.id)){p.dateId=to;delete p.order}});
+  SEL=null;closeTop();selRepaint();
+  const where=to===ALBUM?'the Album':((collOf(to)||{}).title||'the collection');
+  toast(n>1?`${n} photos moved to ${where}`:`Moved to ${where}`);
 }
 function refreshPhotoGrid(){
   if(!curDateId)return;
   const el=$('psec');if(el)el.innerHTML=photoSectionHTML(curDateId);
 }
-function toggleArrange(){arrangeMode=!arrangeMode;refreshPhotoGrid()}
+function toggleArrange(){SEL=null;arrangeMode=!arrangeMode;refreshPhotoGrid()}
 function movePhoto(dateId,ix,n){
   const ph=photosOf(dateId);
   const t=ph.splice(ix,1)[0];ph.splice(ix+n,0,t);
@@ -1898,12 +1975,7 @@ function vCaption(){
 }
 function vMove(){
   const p=V&&V.list[V.ix];if(!p)return;
-  const opts=[{id:ALBUM,title:'Album'}].concat(S.colls).filter(o=>o.id!==p.dateId);
-  if(!opts.length)return toast('Create a collection first');
-  closeViewer();
-  openOverlay(`
-   <div class="sheet-head"><button class="hbtn subtle" onclick="closeTop()">Cancel</button><h2>Move to…</h2></div>
-   <div class="sheet-body">${opts.map(o=>`<button class="move-row" onclick="movePhotoTo('${p.id}','${o.id}')">${o.id===ALBUM?'🖼️ Album, outside any collection':'📁 '+esc(o.title)}</button>`).join('')}</div>`);
+  closeViewer();openMoveSheet([p.id],p.dateId);
 }
 async function vDelete(){
   if(!V||!confirm('Delete this photo?'))return;
