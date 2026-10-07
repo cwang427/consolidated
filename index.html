@@ -12,7 +12,7 @@
 <meta name="theme-color" content="#faf5ef">
 <!-- Bump this on every deploy. Settings reads it, and compares it against the copy
      live on Pages, so you can tell whether your phone is showing the latest. -->
-<meta name="build" content="2026-09-28.2">
+<meta name="build" content="2026-10-07.1">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,700&family=Nunito+Sans:wght@400;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
@@ -158,7 +158,7 @@ label{display:block;font-size:var(--fs-ms);font-weight:var(--w-bold);color:var(-
 
 /* ---- photos ---- */
 .photo-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-top:8px}
-.photo-grid img{width:100%;aspect-ratio:1;object-fit:cover;border-radius:var(--r-sm);cursor:pointer}
+.photo-grid img{display:block;width:100%;aspect-ratio:1;object-fit:cover;border-radius:var(--r-sm);cursor:pointer}
 .add-photo{aspect-ratio:1;border:2px dashed var(--line);border-radius:var(--r-sm);display:flex;flex-direction:column;align-items:center;justify-content:center;color:var(--muted);font-size:var(--fs-sm);font-weight:var(--w-bold);gap:2px;cursor:pointer}
 .add-photo .plus{font-size:24px;color:var(--rose)}
 .ph-cell{position:relative}
@@ -268,6 +268,7 @@ hr{border:none;border-top:1px solid var(--line);margin:18px 0}
 <nav id="tabbar" hidden>
   <button id="tab-ideas" onclick="setTab('ideas')"><span class="ico">💡</span>Ideas</button>
   <button id="tab-journal" onclick="setTab('journal')"><span class="ico">📖</span>Journal</button>
+  <button id="tab-album" onclick="setTab('album')"><span class="ico">🖼️</span>Album</button>
   <button id="tab-map" onclick="setTab('map')"><span class="ico">🗺️</span>Map</button>
   <button id="tab-settings" onclick="setTab('settings')"><span class="ico">⚙️</span>Settings</button>
 </nav>
@@ -395,7 +396,15 @@ function whenChip(i){
 }
 function toast(msg,ms=1800){const t=$('toast');t.textContent=msg;t.classList.add('show');clearTimeout(t._h);t._h=setTimeout(()=>t.classList.remove('show'),ms)}
 function pname(k){return PARTNERS[k].name}
-const photosOf=id=>S.photos.filter(p=>p.dateId===id).sort((a,b)=>((a.order??a.created)||0)-((b.order??b.created)||0));
+// The shared Album holds photos that belong to no particular memory. They're ordinary
+// `photos` rows whose dateId is this sentinel (Firestore ids are 20 alphanumerics, so it
+// can't collide with a real memory), which keeps upload, clips, the viewer, deletion and
+// backup all working unchanged. A memory's photos read in the couple's chosen order; the
+// album reads newest first, like a camera roll.
+const ALBUM='_album';
+const photosOf=id=>S.photos.filter(p=>p.dateId===id).sort(id===ALBUM
+  ?(a,b)=>(b.created||0)-(a.created||0)
+  :(a,b)=>((a.order??a.created)||0)-((b.order??b.created)||0));
 const liveDates=()=>S.dates.filter(d=>!d.trash);
 const otherOf=k=>k==='A'?'B':'A';
 // A spot is identified by its rounded coordinates (~1m). Underscores, not dots, because
@@ -512,10 +521,11 @@ function render(){
   if(!S.ready){app.innerHTML='<div class="hero"><div class="big"><span class="calico"><i>JUL</i><b>19</b></span></div><p>Loading…</p></div>';return}
   if(!S.me){tb.hidden=true;fab.hidden=true;app.innerHTML=whoAmI();return}
   tb.hidden=false;
-  ['ideas','journal','map','settings'].forEach(t=>$('tab-'+t).classList.toggle('on',S.tab===t));
-  fab.hidden=!(S.tab==='ideas'||S.tab==='journal');
+  ['ideas','journal','album','map','settings'].forEach(t=>$('tab-'+t).classList.toggle('on',S.tab===t));
+  fab.hidden=!(S.tab==='ideas'||S.tab==='journal'||S.tab==='album');
   if(S.tab==='ideas')app.innerHTML=ideasView();
   else if(S.tab==='journal')app.innerHTML=journalView();
+  else if(S.tab==='album')app.innerHTML=albumView();
   else if(S.tab==='map'){app.innerHTML=mapView();setTimeout(drawBigMap,30)}
   else app.innerHTML=settingsView();
 }
@@ -552,7 +562,7 @@ function verHTML(){
   return `${me} · <b style="color:var(--rose-dark)">${esc(v)} is live</b>
    <button class="btn small" style="margin-top:10px" onclick="location.reload()">Reload to update</button>`;
 }
-function fabTap(){S.tab==='journal'?openDateForm():openIdeaForm()}
+function fabTap(){S.tab==='journal'?openDateForm():S.tab==='album'?pickPhotos(ALBUM):openIdeaForm()}
 
 // ══════════ overlays ══════════
 const overlayStack=[];
@@ -1155,7 +1165,7 @@ function memListHTML(){
       ? `<div class="hint" style="margin:0 0 8px">${found.length} match${found.length===1?'':'es'} across every month</div>`+found.map(memCardHTML).join('')
       : `<div class="empty">Nothing matches “${esc(S.memQ.trim())}”.</div>`;
   }
-  const seg=`<div class="seg"><button class="${S.journalMode==='album'?'on':''}" onclick="blurActive();S.journalMode='album';render()">📸 Album</button><button class="${S.journalMode==='cal'?'on':''}" onclick="blurActive();S.journalMode='cal';render()">🗓️ Calendar</button></div>`;
+  const seg=`<div class="seg"><button class="${S.journalMode==='album'?'on':''}" onclick="blurActive();S.journalMode='album';render()">📋 List</button><button class="${S.journalMode==='cal'?'on':''}" onclick="blurActive();S.journalMode='cal';render()">🗓️ Calendar</button></div>`;
   const cur=calKey(),ms=memoryMonths();
   const monthRow=(S.journalMode==='album'&&live.length)?`<div class="cal-head">
     <button onclick="albumNav(-1)" ${ms.some(m=>m<cur)?'':'disabled style="opacity:.25"'}>‹</button>
@@ -1323,6 +1333,14 @@ function photoGridHTML(dateId){
     ?`<div class="ph-cell" onclick="openViewer('${dateId}',${ix})"><img src="${p.thumb}"><span class="ph-badge">▶${p.secs?' '+p.secs+'s':''}</span></div>`
     :`<img src="${p.thumb}" onclick="openViewer('${dateId}',${ix})">`).join('')
    +`<div class="add-photo" onclick="pickPhotos('${dateId}')"><span class="plus">＋</span>Add photos or clip</div>`;
+}
+function albumView(){
+  const ph=photosOf(ALBUM),n=ph.length;
+  return `<h1 class="screen-title">Album</h1><p class="screen-sub">${n} photo${n===1?'':'s'} so far</p>
+  ${n?`<div class="photo-grid">${ph.map((p,ix)=>p.kind==='clip'
+      ?`<div class="ph-cell" onclick="openViewer('${ALBUM}',${ix})"><img src="${p.thumb}"><span class="ph-badge">▶${p.secs?' '+p.secs+'s':''}</span></div>`
+      :`<img src="${p.thumb}" onclick="openViewer('${ALBUM}',${ix})">`).join('')}</div>`
+    :`<div class="empty"><div class="big">🖼️</div>No photos yet.<br>Tap <b>+</b> to add photos that don't belong to one date.</div>`}`;
 }
 function refreshPhotoGrid(){
   if(!curDateId)return;

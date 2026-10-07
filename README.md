@@ -52,7 +52,8 @@ The app walks you through it: sign in with your own login (once per device — i
 - **Lists** — start a line with `-` and it becomes a bullet. In an idea's **details** those bullets are tickable: a watchlist, recipes to try, games to play. Tick one and it drops into a collapsed *Done* list with the date, so the live list stays short and nothing gets lost. Bullets in notes and reflections are just bullets.
 - **Logging a date** works from an idea ("We did this — log it") or from scratch for past dates. Add every stop of a long day out — with 2+ stops the map draws the route. Photos and reflections are added on the memory's page after saving.
 - **Photos** are resized to ~1600px JPEG on your phone before upload, so each is roughly 200–500 KB. The free 1 GB Firestore tier holds ~3,000 photos. They're "screen quality," not print-res originals — keep the originals in your camera roll.
-- **Journal** flips between an album feed and a calendar; tap any marked day to relive it.
+- **Journal** flips between a month-by-month list and a calendar; tap any marked day to relive it.
+- **Album** is a shared home for photos and clips that don't belong to one date. Tap **+** on that tab to add some.
 - **Free-tier math**: Firestore's Spark plan gives 1 GB storage, 50K reads and 20K writes per day. Two people can't realistically dent the daily quotas; storage is the only number to watch, and the app keeps photos small.
 - **Backup**: Settings → Backup. **Prepare backup** gathers everything (including every full-size photo) into one JSON file, then **Save backup** hands it to your phone — on iOS that's the share sheet, so pick *Save to Files*. It's two taps because iOS only lets a page hand over a file from inside a real tap, and gathering the photos takes a moment. If any photo can't be read it says so rather than quietly leaving it out.
 

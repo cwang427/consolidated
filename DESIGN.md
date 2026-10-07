@@ -228,15 +228,17 @@ impression:
 - **"Who are you?"** — a fallback shown only if the app can't work out which partner is
   signed in. Two big buttons, one per person.
 
-Then four tabs, a bottom tab bar, and a floating `+` button:
+Then five tabs, a bottom tab bar, and a floating `+` button:
 
 1. **Ideas** — search box, category filter chips, list of idea cards. Dated ideas float to a
    "⏳ Coming up" block at the top.
-2. **Journal** — toggles between an album feed (paged by month) and a month calendar.
+2. **Journal** — toggles between a list of memories (paged by month) and a month calendar.
    Also holds a Trash section.
-3. **Map** — full-screen Leaflet map with pins for ideas and for places they've been, both
+3. **Album** — a shared grid of photos and clips that don't belong to any one date, newest
+   first. The `+` button adds to it.
+4. **Map** — full-screen Leaflet map with pins for ideas and for places they've been, both
    home bases, and route lines connecting the stops of a multi-stop day.
-4. **Settings** — home base for each partner, account, backup, version.
+5. **Settings** — home base for each partner, account, backup, version.
 
 Detail views open as **bottom sheets** over the current screen:
 
@@ -299,7 +301,7 @@ Not off-limits — just low return, so spend your time elsewhere unless you disa
 
 ### One thing that isn't settled, if you want it
 
-The icons throughout are **emoji** — 💡 📖 🗺️ ⚙️ in the tab bar, 🏠 and 📍 and ⏳ in
+The icons throughout are **emoji** — 💡 📖 🖼️ 🗺️ ⚙️ in the tab bar, 🏠 and 📍 and ⏳ in
 headings. That was a pragmatic choice, not a considered one: emoji are free, need no
 drawing, and render everywhere. A proper icon set would look considerably better and is
 entirely doable — it just means someone drawing perhaps fifteen icons and them being
