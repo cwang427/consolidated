@@ -203,7 +203,7 @@ custom pressed state; it'd be good to make that consistent.
 
 Beyond the screens themselves, these each have their own look and are all fair game: cards,
 chips and category filter pills, primary/secondary/danger buttons, text inputs and
-textareas, the two-per-screen note boxes, the photo grid, the month calendar grid and its
+textareas, the two-per-screen note boxes, the photo grid, collection cards and the photo picker, the month calendar grid and its
 day marks, the tab bar, the floating `+` button, the toast, the trim handles for video
 clips, and the checklist checkboxes inside idea descriptions.
 
@@ -234,8 +234,10 @@ Then five tabs, a bottom tab bar, and a floating `+` button:
    "⏳ Coming up" block at the top.
 2. **Journal** — toggles between a list of memories (paged by month) and a month calendar.
    Also holds a Trash section.
-3. **Album** — a shared grid of photos and clips that don't belong to any one date, newest
-   first. The `+` button adds to it.
+3. **Album** — photos and clips that don't belong to any one date. Collections (a title,
+   a description, and their own photos) sit as cards at the top; loose photos follow, newest
+   first. The `+` button adds loose photos. Album photos can carry a caption, shown under
+   the photo in the viewer.
 4. **Map** — full-screen Leaflet map with pins for ideas and for places they've been, both
    home bases, and route lines connecting the stops of a multi-stop day.
 5. **Settings** — home base for each partner, account, backup, version.
