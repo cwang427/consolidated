@@ -12,7 +12,7 @@
 <meta name="theme-color" content="#faf5ef">
 <!-- Bump this on every deploy. Settings reads it, and compares it against the copy
      live on Pages, so you can tell whether your phone is showing the latest. -->
-<meta name="build" content="2026-10-07.3">
+<meta name="build" content="2026-11-05.1">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,700&family=Nunito+Sans:wght@400;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
@@ -155,6 +155,35 @@ label{display:block;font-size:var(--fs-ms);font-weight:var(--w-bold);color:var(-
 .cal-cell img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
 .cal-cell .heart{position:absolute;right:3px;bottom:2px;font-size:var(--fs-xs);z-index:2}
 .cal-cell.today{outline:2px solid var(--gold)}
+
+/* ---- today: mood check-in + question of the day ---- */
+.today-card{cursor:pointer}
+.mood-ask{font-size:var(--fs-md);font-weight:var(--w-bold);color:var(--plum);margin-top:8px}
+.mood-row{display:flex;gap:2px;margin:4px -4px 0}
+.mood-row button{flex:1;font-size:24px;line-height:1;padding:7px 0;border-radius:var(--r-sm)}
+.mood-row button:active{background:var(--rose-soft)}
+.mood-line{display:flex;align-items:center;gap:7px;font-size:var(--fs-md);margin-top:8px;min-width:0}
+.mood-line b{flex-shrink:0}
+.mood-line .e{font-size:var(--fs-title);line-height:1}
+.mood-line .dim{color:var(--muted)}
+.mood-line .why{color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.mood-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-bottom:10px}
+.mood-grid button{display:flex;flex-direction:column;align-items:center;gap:1px;padding:7px 0 5px;border-radius:var(--r-md);
+  border:1.5px solid var(--line);background:var(--card);font-size:var(--fs-sm);font-weight:var(--w-bold);color:var(--plum)}
+.mood-grid button .e{font-size:24px;line-height:1.2}
+.mood-grid button.on{border-color:var(--rose);background:var(--rose-soft);color:var(--rose-dark)}
+.mood-grid.B button.on{border-color:var(--teal);background:var(--teal-soft);color:var(--teal)}
+.mood-big{display:flex;align-items:center;gap:8px;font-size:var(--fs-lg);font-weight:var(--w-bold)}
+.mood-big .e{font-size:24px;line-height:1.2}
+.mood-big .at{font-size:var(--fs-sm);font-weight:var(--w-normal);color:var(--muted)}
+.today-q{border-top:1px solid var(--line);margin-top:12px;padding-top:10px}
+.qlabel{font-size:var(--fs-xs);font-weight:var(--w-heavy);color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
+.qotd{font-family:var(--font-display);font-weight:var(--w-bold);font-size:var(--fs-title-sm);line-height:1.35;margin:3px 0 0}
+.qotd.big{font-size:var(--fs-title);margin:0 0 12px}
+.today-st{font-size:var(--fs-sm);font-weight:var(--w-bold);color:var(--muted);margin-top:6px}
+.today-st.go{color:var(--rose-dark)}
+.day-moods{display:flex;flex-wrap:wrap;gap:4px 14px;font-size:var(--fs-md);margin:4px 0 2px}
+.day-moods>span{display:flex;align-items:center;gap:5px}
 
 /* ---- photos ---- */
 .photo-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-top:8px}
@@ -327,7 +356,7 @@ const CATS=['Food & drink','Outdoors','Arts & culture','At home','Adventure','Da
 // identity = SHA-256 of the signed-in email; the real addresses live only in the Firebase console
 const PARTNERS={A:{name:'Mr. Soccerboy',emailHash:'9ed83fa4276eb047b246d4ad094cf8daf2bef8187f2c97e98a67c8294c30f929'},B:{name:'Ms. Chairgirl',emailHash:'e8f60b7542c1a41a288c21f2d65ac96ef6c299fa71f1fa8bbce7859cc2e93cd9'}};
 let db=null;
-const S={ready:false,cfgOk:false,authKnown:false,user:null,settings:null,places:{},ideas:[],dates:[],photos:[],colls:[],
+const S={ready:false,cfgOk:false,authKnown:false,user:null,settings:null,places:{},ideas:[],dates:[],photos:[],colls:[],days:[],
   me:localStorage.getItem('dj_me')||null,
   tab:'ideas',ideaFilter:'all',journalMode:'album',ver:null,backup:null,
   cal:(()=>{const d=new Date();return new Date(d.getFullYear(),d.getMonth(),1)})()};
@@ -535,6 +564,7 @@ function subscribe(){
   db.collection('dates').onSnapshot(q=>{S.dates=q.docs.map(d=>({id:d.id,...d.data()}));S.dates.sort((a,b)=>(b.day||'').localeCompare(a.day||'')||(b.created||0)-(a.created||0));initCalMonth();render()});
   db.collection('collections').onSnapshot(q=>{S.colls=q.docs.map(d=>({id:d.id,...d.data()}));S.colls.sort((a,b)=>(b.created||0)-(a.created||0));render()});
   db.collection('photos').onSnapshot(q=>{S.photos=q.docs.map(d=>({id:d.id,...d.data()}));S.photos.sort((a,b)=>(a.created||0)-(b.created||0));render();refreshPhotoGrid()});
+  db.collection('days').onSnapshot(q=>gotDays(q.docs.map(d=>({id:d.id,...d.data()}))),e=>console.error(e));
 }
 
 // ══════════ main render ══════════
@@ -1220,6 +1250,7 @@ function journalView(){
       ${mine?'':`<button class="btn small" style="background:#b3413f;margin-left:8px;margin-top:0" onclick="hardDeleteDate('${d.id}')">Delete forever</button>`}</div>`;
   }).join(''):'';
   return `<h1 class="screen-title">Our journal</h1><p class="screen-sub">${live.length} memor${live.length===1?'y':'ies'} so far</p>
+  ${todayCardHTML()}
   ${searchBox('mem','Search memories — title, place, thoughts',S.memQ)}
   <div id="mem-list">${memListHTML()}</div>${trashSec}`;
 }
@@ -1265,6 +1296,318 @@ function calTap(ds){
   if(es.length===1)return openDate(es[0].id);
   openOverlay(`<div class="sheet-head"><button class="hbtn subtle" onclick="closeTop()">✕</button><h2>${fmtDay(ds)}</h2><span></span></div>
    <div class="sheet-body">${es.map(d=>`<div class="card mem-card" onclick="closeTop();openDate('${d.id}')"><div class="mem-title">${esc(d.title)}</div></div>`).join('')}</div>`);
+}
+
+// ══════════ today: mood check-in + question of the day ══════════
+// One `days` doc per calendar day, its id the 'YYYY-MM-DD' it belongs to:
+//   {q, mood:{A:{e,t,note,at}}, ans:{A,B}, sealed:{A:ms,B:ms}}
+// Moods are read the moment they're set — knowing how the other is doing is the point.
+// Answers are sealed the way reflections are: neither is rendered into the page until both
+// of you have pressed Share. Every day doc is born under this rule, so unlike reflections
+// there's nothing to grandfather and no `blind` flag.
+const MOODS=[['😄','Great'],['🙂','Good'],['😌','Calm'],['😐','Meh'],['😴','Tired'],['😩','Stressed'],['😢','Down'],['🤒','Sick']];
+// Original to this app. Mixed on purpose — light, curious and reflective take turns.
+const QUESTIONS=[
+ 'What’s a small thing I did recently that you noticed but didn’t mention?',
+ 'If we had a completely free Saturday with no plans, how would you want to spend it?',
+ 'What’s a smell that takes you straight back to childhood?',
+ 'Which of our dates would you happily repeat exactly as it was?',
+ 'What’s something you’re looking forward to this month?',
+ 'What’s a skill you’d love for us to learn together?',
+ 'What was the best part of your day yesterday?',
+ 'If you could eat only one cuisine for a year, which would it be?',
+ 'What’s a song you can’t hear without thinking of a specific moment?',
+ 'What’s one thing you’d like more of in your week?',
+ 'What did you want to be when you grew up, and how close did you get?',
+ 'What’s a place you’ve never been that you think about a lot?',
+ 'What’s the most useful piece of advice anyone has given you?',
+ 'What’s a habit of mine you’ve picked up without meaning to?',
+ 'If we opened a tiny shop together, what would it sell?',
+ 'What always cheers you up when you’re having a bad day?',
+ 'What’s the first thing you noticed about me?',
+ 'What’s a food you hated as a kid but love now?',
+ 'What’s a memory of us that makes you laugh every time?',
+ 'Which fictional world would you most like to live in for a week?',
+ 'What’s a tradition you’d like us to start?',
+ 'What’s something you’re proud of that you don’t talk about much?',
+ 'What’s the best meal you’ve ever had?',
+ 'If you could master any instrument overnight, which would you choose?',
+ 'What’s one way I could make your week a little easier?',
+ 'What’s a movie you could watch over and over?',
+ 'Where’s the most beautiful place you’ve watched the sun set or rise?',
+ 'What’s a question you’ve always wanted to ask me but haven’t?',
+ 'What’s your ideal rainy-day plan?',
+ 'What’s something new you learned this week?',
+ 'If we had a theme song, what would it be?',
+ 'What’s a compliment you’ve received that stuck with you?',
+ 'Which season suits you best, and why?',
+ 'What’s a trip you’d like us to take in the next year?',
+ 'What’s something about your family you’d like me to understand better?',
+ 'What’s the strangest dream you can remember?',
+ 'What’s the best gift you’ve ever received?',
+ 'What would your perfect breakfast look like?',
+ 'What’s a small luxury you’d never give up?',
+ 'What’s something you’ve changed your mind about in the last few years?',
+ 'What do you think we’re especially good at as a team?',
+ 'What’s a game you’d like us to play more often?',
+ 'If you could relive one day from the past year, which would it be?',
+ 'What’s a hobby you dropped that you’d like to pick back up?',
+ 'What’s your favorite thing about where you live right now?',
+ 'What’s a book, show or podcast you think I’d enjoy?',
+ 'What’s one thing on your mind today that you haven’t said out loud?',
+ 'What’s the most spontaneous thing you’ve ever done?',
+ 'If you could have dinner with anyone, living or not, who would it be?',
+ 'What’s something you’d like us to try cooking together?',
+ 'When did you last feel really understood by me?',
+ 'What’s a fear you’ve gotten past?',
+ 'What would you do with an unexpected day off tomorrow?',
+ 'What’s a snack you’d defend to the end?',
+ 'What do you want to remember about this year?',
+ 'What was your favorite toy or game as a kid?',
+ 'What’s something you find beautiful that most people overlook?',
+ 'If we swapped lives for a day, what would surprise you most?',
+ 'What’s your favorite way to spend a slow evening together?',
+ 'What’s a goal you’re quietly working toward?',
+ 'What’s the best concert, game or show you’ve ever been to?',
+ 'What’s a word or phrase you know you overuse?',
+ 'What’s the kindest thing a stranger has done for you?',
+ 'What’s a place nearby we haven’t explored yet?',
+ 'What’s your go-to comfort movie or show?',
+ 'What would you name a boat if you owned one?',
+ 'What’s something you’d like us to do more spontaneously?',
+ 'What’s a memory from school you still think about?',
+ 'Which of your friends do you think I’d get along with best, and why?',
+ 'What’s one thing that made you smile today?',
+ 'If you could instantly become an expert in something, what would it be?',
+ 'What’s your favorite photo of us, and why?',
+ 'What’s a dish from your childhood you’d like me to try?',
+ 'What’s the best decision you’ve made in the past year?',
+ 'What’s a weird fact you love?',
+ 'How do you like to be looked after when you’re sick?',
+ 'What’s an adventure on your bucket list?',
+ 'What’s a little everyday moment with me you enjoy most?',
+ 'What’s something you’re curious about right now?',
+ 'If you had to teach a class on anything, what would it be?',
+ 'What’s your favorite holiday, and what makes it good?',
+ 'What’s a city you’d love to live in for a few months?',
+ 'What’s a talent you wish you had?',
+ 'What’s something you’d like to get better at saying?',
+ 'What’s your earliest memory?',
+ 'What’s something you love wearing?',
+ 'What’s a date idea you’ve been too shy to suggest?',
+ 'What do you do when you need to recharge?',
+ 'What’s a painting, photo or building that has stayed with you?',
+ 'Which of your habits are you trying to change?',
+ 'What’s something you’d like to know about my childhood?',
+ 'What’s a challenge you’re facing at the moment?',
+ 'What’s the funniest thing that’s happened to you in public?',
+ 'If we had a free weekend and no budget, where would we go?',
+ 'What advice would you give your teenage self?',
+ 'What’s a sound you find calming?',
+ 'What’s a moment this week you wish I’d been there for?',
+ 'What’s a sport or activity you’d like to try with me?',
+ 'What’s a family recipe or tradition you’d like to keep alive?',
+ 'What’s been making you laugh lately?',
+ 'What’s the most memorable trip you took before we met?',
+ 'What does a really good day look like for you?',
+ 'What’s one thing about the future you’re excited about?',
+ 'If you could have any animal as a pet, real or imagined, what would it be?',
+ 'When did you last surprise yourself?',
+ 'Which of our inside jokes is your favorite?',
+ 'What’s one thing you’d like us to plan for next month?',
+ 'What do you always notice first in a new place?',
+ 'What’s a song you’d put on a playlist for us?',
+ 'Who has influenced you most, and how?',
+ 'What’s a simple pleasure you enjoyed recently?',
+ 'What’s a rule you live by?',
+ 'What’s something you’d love to build or make with your hands?',
+ 'What’s a question you wish people asked you more often?',
+ 'What’s a mistake you learned a lot from?',
+ 'If you could visit any era for a day, which would you pick?',
+ 'What’s your favorite way to celebrate a win?',
+ 'What’s been on your to-do list for far too long?',
+ 'What’s the coziest place you’ve ever been?',
+ 'What’s a view you’d like to wake up to?',
+ 'What’s something that’s harder for you than people realize?',
+ 'What’s your favorite thing we’ve cooked or eaten together?',
+ 'Which three words would you use to describe this week?',
+ 'What’s something you’d like to say thank you for?',
+ 'Besides home, what’s a place that feels like home to you?',
+ 'What’s a song you secretly love but rarely admit to?',
+ 'What’s the most interesting conversation you’ve had lately?',
+ 'What would your ideal birthday look like?',
+ 'What’s a small change that’s made your life better?',
+ 'When were you last really proud of me?',
+ 'What do you think we’ll be doing ten years from now?',
+ 'What’s a restaurant or café you love that more people should know about?',
+ 'What’s a game, puzzle or challenge you’re weirdly good at?',
+ 'What’s something you’d like to do outdoors more?',
+ 'What’s a story your family always tells about you?',
+ 'What’s the best thing about today so far?',
+ 'What’s something you’d like us to try for the first time together?',
+ 'What’s a quote or line that stuck with you?',
+ 'Which of our photos would you frame?',
+ 'What part of your routine would you never skip?',
+ 'What’s a question you’d ask your future self?',
+ 'What’s the best surprise you’ve ever had?',
+ 'How do you think you’ve grown in the past year?',
+ 'If we wrote a book together, what would it be about?',
+ 'What’s something you’d like us to celebrate soon?',
+ 'What’s a dessert worth traveling for?',
+ 'What’s something you’d like me to ask you about more?',
+ 'What’s a memory of us you hope we never forget?'];
+const isDayId=s=>/^\d{4}-\d\d-\d\d$/.test(s||'');
+const dayDoc=ds=>S.days.find(d=>d.id===ds);
+// The same question for both of you on the same date, with no server to agree on it: the
+// date picks it. Day numbers count from the epoch in UTC so DST can't shift the pick.
+function questionFor(ds){
+  const[y,m,d]=ds.split('-').map(Number),n=Math.round(Date.UTC(y,m-1,d)/86400000),L=QUESTIONS.length;
+  return QUESTIONS[((n%L)+L)%L];
+}
+// The text is stored with the day's first write, so editing or reordering the bank later
+// can never change what an old answer was answering.
+const qOf=ds=>(dayDoc(ds)||{}).q||questionFor(ds);
+function writeDay(ds,data){
+  const q=(dayDoc(ds)||{}).q?{}:{q:questionFor(ds)};
+  return db.collection('days').doc(ds).set({...q,...data},{merge:true});
+}
+function gotDays(list){
+  S.days=list.filter(d=>isDayId(d.id)).sort((a,b)=>b.id.localeCompare(a.id));
+  render();paintDays();
+}
+const moodOf=(d,k)=>{const m=d&&d.mood&&d.mood[k];return m&&(m.e||m.note)?m:null};
+const ansOf=(d,k)=>((d&&d.ans)||{})[k]||'';
+const fmtTime=ms=>new Date(ms).toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'});
+// one line per partner, shared by the card's summary
+function moodLine(d,k){
+  const m=moodOf(d,k),mine=k===S.me;
+  return `<div class="mood-line"><span class="dot${k}"></span><b>${mine?'You':esc(pname(k))}</b>${m&&m.e
+    ?`<span class="e">${esc(m.e)}</span><span>${esc(m.t||'')}</span>${m.note?`<span class="why">· ${esc(m.note)}</span>`:''}`
+    :`<span class="dim">${mine?'Not checked in yet':'Hasn’t checked in yet'}</span>`}</div>`;
+}
+// How the day's question stands, from your side. `now` = it's today's question.
+function ansStatus(d,now){
+  const me=S.me,them=pname(otherOf(me)),s=(d&&d.sealed)||{};
+  if(s[me]&&s[otherOf(me)])return now?`You’ve both answered — tap to read`:`You both answered`;
+  if(s[me])return now?`You answered · waiting for ${esc(them)}`:`Only you answered`;
+  if(s[otherOf(me)])return `🔒 ${esc(them)} answered — answer yours to read it`;
+  if(ansOf(d,me))return `Draft saved — not shared yet`;
+  return now?`Tap to answer`:`Not answered`;
+}
+// worth drawing the eye: today's question you haven't shared, or any day your partner
+// has answered and is waiting on you — not every past day you both let slide
+const ansGo=(d,now)=>{const s=(d&&d.sealed)||{};return !s[S.me]&&(now||!!s[otherOf(S.me)])};
+function todayCardHTML(){
+  const ds=todayStr(),d=dayDoc(ds),day=new Date().toLocaleDateString(undefined,{weekday:'short',month:'short',day:'numeric'});
+  const moods=bothKeys().map(k=>k===S.me&&!(moodOf(d,k)||{}).e
+    ?`<div class="mood-ask">How are you today?</div><div class="mood-row">${MOODS.map(([e,t],i)=>
+        `<button onclick="setMood(${i},event)" aria-label="${t}">${e}</button>`).join('')}</div>`
+    :moodLine(d,k)).join('');
+  return `<div class="card today-card" onclick="openDay('${ds}')">
+    <span class="mem-day">Today · ${esc(day)}</span>${moods}
+    <div class="today-q"><div class="qlabel">Question of the day</div><div class="qotd">${esc(qOf(ds))}</div>
+    <div class="today-st${ansGo(d,true)?' go':''}">${ansStatus(d,true)}</div></div></div>`;
+}
+function setMood(ix,ev){
+  if(ev)ev.stopPropagation();                  // a tap on the card itself opens the day
+  const [e,t]=MOODS[ix];
+  writeDay(todayStr(),{mood:{[S.me]:{e,t,at:Date.now()}}}).then(()=>toast(`Checked in ${e}`),()=>toast('Could not save'));
+}
+function saveMoodNote(ds){
+  const el=$('dmn-'+ds);if(!el)return;
+  const v=el.value.trim();if(v===((moodOf(dayDoc(ds),S.me)||{}).note||''))return;
+  writeDay(ds,{mood:{[S.me]:{note:v}}}).then(()=>toast('Saved ✓'),()=>toast('Could not save'));
+}
+function saveAns(ds){
+  const el=$('dan-'+ds);if(!el)return;
+  const v=el.value.trim();if(v===ansOf(dayDoc(ds),S.me))return;
+  writeDay(ds,{ans:{[S.me]:v}}).then(()=>toast('Saved ✓'),()=>toast('Could not save'));
+}
+function shareAns(ds){
+  const el=$('dan-'+ds);if(!el)return;
+  const v=el.value.trim();if(!v)return toast('Write something first');
+  writeDay(ds,{ans:{[S.me]:v},sealed:{[S.me]:Date.now()}}).then(()=>toast('Shared ✓'),()=>toast('Could not save'));
+}
+// The pieces of an open day sheet that change under you. None of them holds a textarea, so
+// repainting them on every snapshot can't disturb what you're typing — that's why the
+// sheet is split this way, and why this one, unlike other sheets, stays live.
+function moodGridHTML(ds){
+  const m=moodOf(dayDoc(ds),S.me)||{};
+  return MOODS.map(([e,t],i)=>`<button class="${m.e===e?'on':''}" onclick="setMood(${i})"><span class="e">${e}</span>${t}</button>`).join('');
+}
+function theirMoodHTML(ds){
+  const k=otherOf(S.me),m=moodOf(dayDoc(ds),k),now=ds===todayStr();
+  return `<div class="who"><span class="dot${k}"></span>${esc(pname(k))}</div>${m
+    ?`${m.e?`<div class="mood-big"><span class="e">${esc(m.e)}</span>${esc(m.t||'')}${now&&m.at?`<span class="at">${fmtTime(m.at)}</span>`:''}</div>`:''}
+      ${m.note?`<div class="ro" style="margin-top:4px">${richText(m.note)}</div>`:''}`
+    :`<div class="ro dim">${now?'Hasn’t checked in yet':'No check-in'}</div>`}`;
+}
+function myAnsStatus(ds){
+  const s=(dayDoc(ds)||{}).sealed||{},them=esc(pname(otherOf(S.me)));
+  return s[S.me]
+    ?`<div class="hint">Shared with ${them} — later edits show up straight away.</div>`
+    :`<button class="btn small" style="margin-top:10px" onclick="shareAns('${ds}')">Share with ${them}</button>
+      <div class="hint">Kept private until you share. You'll see ${them}'s once you've both shared.</div>`;
+}
+// Their words must not reach the page at all until you've both shared.
+function theirAnsHTML(ds){
+  const d=dayDoc(ds),k=otherOf(S.me),s=(d&&d.sealed)||{},v=ansOf(d,k);
+  const head=`<div class="who"><span class="dot${k}"></span>${esc(pname(k))}${s[k]?'<span class="tag">shared</span>':''}</div>`;
+  if(!(s[k]&&s[S.me]))return head+`<div class="ro dim">${s[k]
+    ?`🔒 ${esc(pname(k))} has answered — write and share yours to read it`:'Nothing shared yet'}</div>`;
+  return head+`<div class="ro ${v?'':'dim'}">${v?richText(v):'Nothing written'}</div>`;
+}
+// Only repaint what changed. Tapping Share blurs the answer box, which saves the draft, and
+// that save's snapshot lands mid-tap: repainting the status box regardless swapped the
+// Share button out between press and release, and the tap was lost.
+function paintDay(ds){
+  const set=(id,h)=>{const el=$(id+ds);if(!el)return;
+    const t=document.createElement('template');t.innerHTML=h;
+    if(t.innerHTML!==el.innerHTML)el.innerHTML=h};
+  set('dmg-',moodGridHTML(ds));set('dmt-',theirMoodHTML(ds));
+  set('dst-',myAnsStatus(ds));set('dth-',theirAnsHTML(ds));
+}
+function paintDays(){document.querySelectorAll('.sheet-body[data-day]').forEach(el=>paintDay(el.dataset.day))}
+// Element ids carry the day: Today and a past day can be open in the stack at once.
+function openDay(ds){
+  if(!isDayId(ds))return;
+  blurActive();
+  const now=ds===todayStr(),d=dayDoc(ds),me=S.me,mm=moodOf(d,me)||{};
+  const myMood=now
+    ?`<div class="note-box"><div class="who"><span class="dot${me}"></span>${esc(pname(me))} (you)</div>
+       <div class="mood-grid ${me}" id="dmg-${ds}">${moodGridHTML(ds)}</div>
+       <textarea id="dmn-${ds}" placeholder="Anything behind it? (optional)" oninput="autoGrow(this,true)" onfocus="caretAfterKeyboard(this)" onblur="saveMoodNote('${ds}')">${esc(mm.note||'')}</textarea>
+       <div class="hint">${esc(pname(otherOf(me)))} sees your check-in straight away</div></div>`
+    :`<div class="note-box"><div class="who"><span class="dot${me}"></span>${esc(pname(me))} (you)</div>${mm.e||mm.note
+       ?`${mm.e?`<div class="mood-big"><span class="e">${esc(mm.e)}</span>${esc(mm.t||'')}</div>`:''}${mm.note?`<div class="ro" style="margin-top:4px">${richText(mm.note)}</div>`:''}`
+       :'<div class="ro dim">No check-in</div>'}</div>`;
+  const moods=bothKeys().map(k=>k===me?myMood:`<div class="note-box" id="dmt-${ds}">${theirMoodHTML(ds)}</div>`).join('');
+  const myAns=`<div class="note-box"><div class="who"><span class="dot${me}"></span>${esc(pname(me))} (you)</div>
+     <textarea id="dan-${ds}" placeholder="Your answer…" oninput="autoGrow(this,true)" onfocus="caretAfterKeyboard(this)" onblur="saveAns('${ds}')">${esc(ansOf(d,me))}</textarea>
+     <div id="dst-${ds}">${myAnsStatus(ds)}</div></div>`;
+  const answers=bothKeys().map(k=>k===me?myAns:`<div class="note-box" id="dth-${ds}">${theirAnsHTML(ds)}</div>`).join('');
+  openOverlay(`<div class="sheet-head"><button class="hbtn subtle" onclick="closeTop()">✕</button><h2>${now?'Today':esc(fmtDay(ds))}</h2>${now?`<button class="hbtn" onclick="openDays()">Past days</button>`:'<span></span>'}</div>
+   <div class="sheet-body" data-day="${ds}">
+     ${now?`<span class="mem-day">${esc(fmtDay(ds))}</span>`:''}
+     <div class="section-title"${now?'':' style="margin-top:0"'}>${now?'How are you?':'Check-ins'}</div>${moods}
+     <div class="section-title">Question of the day</div>
+     <div class="qotd big">${esc(qOf(ds))}</div>${answers}
+   </div>`);
+}
+function dayRowHTML(d){
+  return `<div class="card mem-card" onclick="openDay('${d.id}')">
+    <span class="mem-day">${esc(fmtDay(d.id))}</span>
+    <div class="day-moods">${bothKeys().map(k=>{const m=moodOf(d,k);
+      return `<span><span class="dot${k}"></span>${m&&m.e?`${esc(m.e)} ${esc(m.t||'')}`:'<span style="color:var(--muted)">—</span>'}</span>`}).join('')}</div>
+    <div class="qotd">${esc(d.q||questionFor(d.id))}</div>
+    <div class="today-st${ansGo(d,false)?' go':''}">${ansStatus(d,false)}</div></div>`;
+}
+// Earlier days, newest first. A day only exists once one of you did something on it.
+function openDays(){
+  const t=todayStr(),list=S.days.filter(d=>d.id<t);
+  openOverlay(`<div class="sheet-head"><button class="hbtn subtle" onclick="closeTop()">✕</button><h2>Past days</h2><span></span></div>
+   <div class="sheet-body">${list.length?list.map(dayRowHTML).join('')
+     :'<div class="empty">Nothing here yet — a day shows up once either of you has checked in or answered</div>'}</div>`);
 }
 
 // ══════════ log / edit a date ══════════
@@ -2115,7 +2458,7 @@ async function makeBackup(){
       if(data)fulls[p.fullId]=data;else missing++;       // a gap is reported, never silently dropped
     }
     const blob=new Blob([JSON.stringify({exported:new Date().toISOString(),build:BUILD,
-      settings:S.settings,ideas:S.ideas,dates:S.dates,collections:S.colls,photos:S.photos,photoFulls:fulls})],
+      settings:S.settings,ideas:S.ideas,dates:S.dates,collections:S.colls,days:S.days,photos:S.photos,photoFulls:fulls})],
       {type:'application/json'});
     const name=`consolidated-backup-${todayStr()}.json`;
     backupFile=new File([blob],name,{type:'application/json'});
@@ -2193,6 +2536,13 @@ $('photoInput').addEventListener('change',async e=>{
   }
   if(imgs.length)toast(ok===imgs.length?(ok>1?`${ok} photos added ✓`:'Photo added ✓'):`${ok} of ${imgs.length} added — one photo format didn't work`);
   for(const f of vids)await openClipEditor(f,target); // one trim sheet at a time
+});
+// An installed app left open overnight comes back showing yesterday's Today card, and
+// nothing else would redraw it until some unrelated change arrived.
+let lastDay=todayStr();
+document.addEventListener('visibilitychange',()=>{
+  if(document.hidden)return;
+  const t=todayStr();if(t!==lastDay){lastDay=t;render()}
 });
 boot();
 render();

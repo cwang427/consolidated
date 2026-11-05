@@ -120,7 +120,8 @@ A handful of sizes sit outside the scale because they're one-offs on single orna
 elements. Call them out by name if you want them changed: the empty-state emoji (44px), the
 login hero emoji (56px) and its title (30px), the `+` button (30px), the calendar's month
 arrows (22px), the tab bar icons (21px), the "add photo" plus (24px), the photo viewer's
-close ✕ (26px), and the date-block digits on the login screen (29px).
+close ✕ (26px), the date-block digits on the login screen (29px), and the mood emoji on the
+Today card and day sheet (24px).
 
 ### Shape
 
@@ -232,7 +233,9 @@ Then five tabs, a bottom tab bar, and a floating `+` button:
 
 1. **Ideas** — search box, category filter chips, list of idea cards. Dated ideas float to a
    "⏳ Coming up" block at the top.
-2. **Journal** — toggles between a list of memories (paged by month) and a month calendar.
+2. **Journal** — a **Today card** on top (each partner's mood check-in, and the question of
+   the day with whether each of you has answered), then a list of memories (paged by month)
+   that toggles to a month calendar.
    Also holds a Trash section.
 3. **Album** — photos and clips that don't belong to any one date. Collections (a title,
    a description, and their own photos) sit as cards at the top; loose photos follow, newest
@@ -248,6 +251,9 @@ Detail views open as **bottom sheets** over the current screen:
   tappable checklist), an optional map, and a note box for each partner.
 - **Memory sheet** — title, date, photo grid, map of the day's stops, a reflection box for
   each partner.
+- **Day sheet** — opened from the Today card: a mood picker (8 emoji with labels) and note
+  for you, your partner's check-in, then the question with an answer box each, sealed until
+  both have shared. **Past days** lists earlier days as cards.
 - **Photo viewer** — full screen, pinch to zoom, prev/next.
 - **Forms** — logging a date, adding an idea, picking a location.
 
