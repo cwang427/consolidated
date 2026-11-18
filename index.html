@@ -12,7 +12,7 @@
 <meta name="theme-color" content="#faf5ef">
 <!-- Bump this on every deploy. Settings reads it, and compares it against the copy
      live on Pages, so you can tell whether your phone is showing the latest. -->
-<meta name="build" content="2026-11-18.1">
+<meta name="build" content="2026-11-18.2">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,700&family=Nunito+Sans:wght@400;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
@@ -424,19 +424,19 @@ function whenChip(i){
 }
 // "We did this" is a tally on the idea, not a link to a memory: a real date usually spans
 // several activities, and memories are logged from the Journal. `did` holds one timestamp
-// per time it was done, so an idea keeps a single card however often it's repeated.
+// per time it was done, so an idea keeps a single card however often it's repeated. Only
+// the count is shown — the times just order the Done list and make each entry unique.
 const didOf=i=>(i&&Array.isArray(i.did)?i.did.slice().sort((a,b)=>a-b):[]);
 const lastDid=i=>{const d=didOf(i);return d.length?d[d.length-1]:0};
 const timesTxt=n=>n===1?'once':n===2?'twice':`${n} times`;
 function didChip(i){
   const d=didOf(i);if(!d.length)return'';
-  return `<span class="chip teal">✓ ${d.length>1?d.length+'× · ':''}${fmtStamp(d[d.length-1])}</span>`;
+  return `<span class="chip teal">✓ Done ${timesTxt(d.length)}</span>`;
 }
 function didHTML(i){
   const d=didOf(i);
   if(!d.length)return `<button class="btn" onclick="markDid('${i.id}')">✓ We did this</button>`;
-  return `<div class="didbox"><div class="didhead">✓ Done ${timesTxt(d.length)}</div>
-    <div class="hint" style="margin-top:2px">${d.slice().reverse().map(fmtStamp).join(' · ')}</div></div>
+  return `<div class="didbox"><div class="didhead">✓ Done ${timesTxt(d.length)}</div></div>
     <button class="btn" onclick="markDid('${i.id}')">We did it again</button>
     <button class="btn ghost small" onclick="undoDid('${i.id}')">Undo last time</button>`;
 }
@@ -451,7 +451,8 @@ function markDid(id){
 function undoDid(id){
   const i=S.ideas.find(x=>x.id===id);if(!i)return;
   const t=lastDid(i);if(!t)return;
-  if(!confirm(`Remove the time marked done on ${fmtStamp(t)}?`))return;
+  const n=didOf(i).length;
+  if(!confirm(n>1?`Take one off the count? It'll read done ${timesTxt(n-1)}.`:'Mark this idea as not done?'))return;
   i.did=didOf(i).filter(x=>x!==t);paintDid(i);
   db.collection('ideas').doc(id).update({did:firebase.firestore.FieldValue.arrayRemove(t)})
     .catch(()=>toast('Could not save'));

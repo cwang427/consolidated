@@ -50,7 +50,7 @@ The app walks you through it: sign in with your own login (once per device — i
 ## How it works / good to know
 - **Ideas** each have a category, an optional location, and a private-ish notes box per partner (you write in yours; you can read each other's).
 - **Lists** — start a line with `-` and it becomes a bullet. In an idea's **details** those bullets are tickable: a watchlist, recipes to try, games to play. Tick one and it drops into a collapsed *Done* list with the date, so the live list stays short and nothing gets lost. Bullets in notes and reflections are just bullets.
-- **Ticking off ideas:** "We did this" on an idea marks it done; it moves to the ✓ Done list at the bottom of the Ideas tab, which keeps every idea you've done with how many times and when. "We did it again" adds another time without adding another card.
+- **Ticking off ideas:** "We did this" on an idea marks it done; it moves to the ✓ Done list at the bottom of the Ideas tab, which keeps every idea you've done with how many times. "We did it again" adds another time without adding another card.
 - **Logging a date** happens from the Journal (the + button), for today or any past day. Add every stop of a long day out — with 2+ stops the map draws the route. Photos and reflections are added on the memory's page after saving.
 - **Photos** are resized to ~1600px JPEG on your phone before upload, so each is roughly 200–500 KB. The free 1 GB Firestore tier holds ~3,000 photos. They're "screen quality," not print-res originals — keep the originals in your camera roll.
 - **Journal** flips between a month-by-month list and a calendar; tap any marked day to relive it.
